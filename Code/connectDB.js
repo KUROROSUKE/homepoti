@@ -71,15 +71,15 @@ function logout() {
 // Google login
 function loginWithGoogle() {
     const provider = new firebase.auth.GoogleAuthProvider();
-    auth.signInWithPopup(provider)
-    .then((result) => {
-        const user = result.user;
-        console.log("Google login success:", user);
-        // あとはauth.on~~で処理できる
-    })
-    .catch((error) => {
-        console.error("Google login failed: ", error);
-        alert("Googleログインに失敗しました");
+    firebase.auth().signInWithRedirect(provider);
+
+    // ページロード時に結果を回収（1回だけ）
+    firebase.auth().getRedirectResult().then(result => {
+    if (result.user) {
+        console.log('Google login success:', result.user);
+    }
+    }).catch(err => {
+    console.error('Google login failed:', err);
     });
 }
 
