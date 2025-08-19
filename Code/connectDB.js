@@ -1,196 +1,133 @@
-/* =========================
- *  connectDB.js  (Firebase v9 compat)
- *  - Googleサインインは Redirect 方式
- *  - /players/$uid へ自分のデータを読書き
- *  - 一覧購読はオプション（rulesに応じてON/OFF）
- *  依存: index.html で以下を読み込み済み
- *    firebase-app-compat.js
- *    firebase-auth-compat.js
- *    firebase-database-compat.js
- *    firebase-storage-compat.js（使わないなら省略可）
- * ========================= */
 
-/* ===== Firebase 初期化 ===== */
+// ============ authentication      ============
+// firebase Realtime DB config
 const firebaseConfig = {
-  apiKey: "AIzaSyBE8CK6ODzy0OrgPogLrE4IK9938rUF3ko",
-  authDomain: "homepoti-b61a7.firebaseapp.com",
-  databaseURL: "https://homepoti-b61a7-default-rtdb.firebaseio.com",
-  projectId: "homepoti-b61a7",
-  storageBucket: "homepoti-b61a7.firebasestorage.app",
-  messagingSenderId: "379862558289",
-  appId: "1:379862558289:web:a8f40e857d5ade3f35ba70",
-  measurementId: "G-W52MY9CN8L",
+    apiKey: "AIzaSyBE8CK6ODzy0OrgPogLrE4IK9938rUF3ko",
+    authDomain: "homepoti-b61a7.firebaseapp.com",
+    databaseURL: "https://homepoti-b61a7-default-rtdb.firebaseio.com",
+    projectId: "homepoti-b61a7",
+    storageBucket: "homepoti-b61a7.firebasestorage.app",
+    messagingSenderId: "379862558289",
+    appId: "1:379862558289:web:a8f40e857d5ade3f35ba70",
+    measurementId: "G-W52MY9CN8L",
 };
 firebase.initializeApp(firebaseConfig);
-
-const auth = firebase.auth();
 const database = firebase.database();
-
-/* ===== DOM ヘルパ ===== */
-function qs(id) { return document.getElementById(id); }
-function show(id, v=true){ const el = qs(id); if(el) el.style.display = v ? "block":"none"; }
-function text(id, s){ const el = qs(id); if(el) el.textContent = s; }
-
-/* ===== 認証（Redirect 方式） ===== */
-const provider = new firebase.auth.GoogleAuthProvider();
-
-async function loginWithGoogle() {
-  try {
-    await auth.signInWithRedirect(provider);
-  } catch (err) {
-    console.error("Google login start failed:", err);
-    alert("Googleログイン開始に失敗: " + err.message);
-  }
+const auth = firebase.auth();
+function getRandomName() {
+    const animals = ["cat", "dog", "bird", "bear", "monkey", "fox", "deer", "penguin"];
+    const rand = animals[Math.floor(Math.random() * animals.length)] + Math.floor(Math.random() * 1000);
+    return rand;
 }
-window.loginWithGoogle = loginWithGoogle;
+auth.onAuthStateChanged(async (authUser) => {
+    if (!authUser) return;
 
-async function handleRedirectResultOnce() {
-  try {
-    const result = await auth.getRedirectResult();
-    if (result && result.user) {
-      console.log("Google login success:", result.user);
-      await ensureUserProfile(result.user);
+    const playerRef = database.ref(`players/${authUser.uid}`);
+    const snapshot  = await playerRef.once('value');
+    let name = snapshot.child('Name').val();
+
+    // もしデータに自分の情報がない -> はじめてサインインしたなら
+    if (!snapshot.exists()) {
+        name = getRandomName();
+        await playerRef.set({
+            Name       : name,
+        });
+    } else if (!name) { // 名前だけがないなら
+        name = getRandomName();
+        await playerRef.update({ Name: name, IsSearched: false });
     }
-  } catch (err) {
-    console.error("Google login failed:", err);
-  }
-}
 
-/* ===== サインアウト ===== */
-async function logout() {
-  await auth.signOut();
-}
-window.logout = logout;
+    // 最初の画面反映
+    //TODO: document.getElementById('UserNameTag').textContent = `名前： ${name}`;
+    document.getElementById('viewScreen').style.display = 'block';
+    document.getElementById('notSigned' ).style.display = 'none';
 
-/* ===== 認証状態監視 ===== */
-auth.onAuthStateChanged(async (user) => {
-  if (user) {
-    show("notSigned", false);
-    show("viewScreen", true);
-    text("UserNameTag", user.displayName || "名無し");
-    try {
-      await ensureUserProfile(user);
-      await fetchMyPlayer();
-      subscribePlayersList({ enable: false });
-    } catch (e) {
-      console.error("初期化中エラー:", e);
-    }
-  } else {
-    show("viewScreen", false);
-    show("notSigned", true);
-  }
+    // 全体のリアルタイム更新監視
+    const playersRef = database.ref('players/');
+    playersRef.on('value', (snapshot) => {
+        if (snapshot.exists()) {
+            // 家族内の投稿を監視・追加
+            const data = snapshot.val();
+
+            const playersArray = Object.entries(data).map(([userId, playerData]) => ({
+                userId,
+                name: playerData.Name || "名無し",
+                rate: playerData.Rate || 0
+            }));
+
+        } else {
+            console.log("プレイヤーデータが存在しません");
+        }
+    }, (error) => {
+        console.error("データ取得エラー:", error);
+    });
 });
-
-handleRedirectResultOnce();
-
-/* ====== Realtime Database ユーティリティ ====== */
-function myRef(uid) {
-  return database.ref(`players/${uid}`);
+function logout() {
+    auth.signOut();
+    document.getElementById("viewScreen").style.display = "none";
+    document.getElementById("postScreen").style.display = "none";
+    document.getElementById("notSigned" ).style.display = "block";
+}
+// Google login
+function loginWithGoogle() {
+    const provider = new firebase.auth.GoogleAuthProvider();
+    auth.signInWithPopup(provider)
+    .then((result) => {
+        const user = result.user;
+        console.log("Google login success:", user);
+        // あとはauth.on~~で処理できる
+    })
+    .catch((error) => {
+        console.error("Google login failed: ", error);
+        alert("Googleログインに失敗しました");
+    });
 }
 
-async function ensureUserProfile(user) {
-  const ref = myRef(user.uid);
-  const snap = await ref.get();
-  if (!snap.exists()) {
-    const data = {
-      Name: user.displayName || "",
-      PhotoURL: user.photoURL || "",
-      CreatedAt: firebase.database.ServerValue.TIMESTAMP,
-      UpdatedAt: firebase.database.ServerValue.TIMESTAMP,
-    };
-    await ref.set(data);
-  } else {
-    await ref.update({ UpdatedAt: firebase.database.ServerValue.TIMESTAMP });
-  }
-}
 
-async function fetchMyPlayer() {
-  const user = auth.currentUser;
-  if (!user) return;
-  try {
-    const ref = myRef(user.uid);
-    const snap = await ref.get();
-    if (snap.exists()) {
-      const val = snap.val();
-      console.log("my player:", val);
-      text("MyNameTag", val.Name || "");
-    } else {
-      console.log("my player: empty");
+// Sign up with email & password
+function SignUpWithMail() {
+    const email = prompt("メールアドレスを入力してください:");
+    const password = prompt("パスワードを入力してください（6文字以上）:");
+    
+    if (!email || !password) {
+        alert("メールアドレスとパスワードを入力してください");
+        return;
     }
-  } catch (err) {
-    console.error("データ取得エラー:", err);
-    alert("自分のデータ取得に失敗: " + err.message);
-  }
-}
-window.fetchMyPlayer = fetchMyPlayer;
 
-async function updateMyPlayer(partial) {
-  const user = auth.currentUser;
-  if (!user) return;
-  const ref = myRef(user.uid);
-  await ref.update({
-    ...partial,
-    UpdatedAt: firebase.database.ServerValue.TIMESTAMP,
-  });
+    auth.createUserWithEmailAndPassword(email, password)
+    .then((userCredential) => {
+        const user = userCredential.user;
+        console.log("サインアップ成功:", user);
+        alert("サインアップ成功しました");
+        startPeer(); // optional if you want to start after signup
+    })
+    .catch((error) => {
+        console.error("サインアップ失敗:", error);
+        alert("サインアップに失敗しました: " + error.message);
+    });
 }
-window.updateMyPlayer = updateMyPlayer;
+// Login with email & password
+function loginWithMail() {
+    const email = prompt("メールアドレスを入力してください:");
+    const password = prompt("パスワードを入力してください:");
+    
+    if (!email || !password) {
+        alert("メールアドレスとパスワードを入力してください");
+        return;
+    }
 
-let playersUnsub = null;
-function subscribePlayersList({ enable = false } = {}) {
-  if (!enable) {
-    if (playersUnsub) { playersUnsub(); playersUnsub = null; }
-    return;
-  }
-  const ref = database.ref("players");
-  const handler = (snap) => {
-    if (!snap.exists()) { renderPlayers([]); return; }
-    const obj = snap.val();
-    const arr = Object.entries(obj).map(([uid, v]) => ({
-      uid,
-      name: v?.Name || "",
-      photoURL: v?.PhotoURL || "",
-      updatedAt: v?.UpdatedAt || 0,
-    })).sort((a,b)=> b.updatedAt - a.updatedAt);
-    renderPlayers(arr);
-  };
-  ref.on("value", handler, (err) => {
-    console.error("一覧購読エラー:", err);
-    alert("一覧購読に失敗: " + err.message);
-  });
-  playersUnsub = () => ref.off("value", handler);
+    auth.signInWithEmailAndPassword(email, password)
+    .then((userCredential) => {
+        const user = userCredential.user;
+        console.log("ログイン成功:", user);
+        alert("ログイン成功しました");
+        document.getElementById("LoginModal").style.display = "none";
+        document.getElementById("UserDataModal").style.display = "block";
+        startPeer(); // optional if you want to start after login
+    })
+    .catch((error) => {
+        console.error("ログイン失敗:", error);
+        alert("ログインに失敗しました: " + error.message);
+    });
 }
 
-function renderPlayers(list) {
-  const el = qs("PlayersList");
-  if (!el) return;
-  el.innerHTML = "";
-  list.forEach((p) => {
-    const li = document.createElement("li");
-    li.textContent = p.name || p.uid;
-    el.appendChild(li);
-  });
-}
-
-function subscribePublicPlayers({ enable = false } = {}) {
-  if (!enable) return;
-  const ref = database.ref("publicPlayers");
-  ref.on("value", (snap) => {
-    if (!snap.exists()) { renderPlayers([]); return; }
-    const obj = snap.val() || {};
-    const arr = Object.entries(obj).map(([uid, v]) => ({
-      uid,
-      name: v?.Name || "",
-      updatedAt: v?.UpdatedAt || 0,
-    })).sort((a,b)=> b.updatedAt - a.updatedAt);
-    renderPlayers(arr);
-  }, (err)=> console.error("public一覧エラー:", err));
-}
-window.subscribePublicPlayers = subscribePublicPlayers;
-
-window.DB = {
-  loginWithGoogle,
-  logout,
-  fetchMyPlayer,
-  updateMyPlayer,
-  subscribePlayersList,
-};
