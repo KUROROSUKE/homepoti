@@ -2,117 +2,146 @@
 <html lang="ja">
 <head>
   <meta charset="utf-8" />
-  <title>日本語 感情推定（WebLLM・完全クライアント）</title>
+  <title>USEで日本語ポジ/ネガ推定（完全クライアント）</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <style>
-    body{font-family:system-ui, sans-serif; margin:20px}
-    textarea{width:100%;height:150px;font-size:16px}
+    body{font-family:system-ui,sans-serif;margin:20px}
+    textarea{width:100%;height:140px;font-size:16px}
     .panel{border:1px solid #ddd;border-radius:8px;padding:12px;margin-top:12px}
-    .mono{font-family:ui-monospace, SFMono-Regular, Menlo, monospace;white-space:pre-wrap}
+    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre-wrap}
     .badge{display:inline-block;padding:2px 8px;border-radius:12px;background:#eee}
     .muted{color:#666;font-size:12px}
-    .err{color:#c00;white-space:pre-wrap}
-    progress{width:100%}
   </style>
 </head>
 <body>
-  <h1>日本語 感情推定（WebLLM / Qwen2.5-0.5B）</h1>
-
-  <div class="panel">
-    <div>モデル読み込み進捗</div>
-    <progress id="prog" max="1" value="0"></progress>
-    <div id="status" class="muted">初期化中…（初回は数百MBのダウンロードが発生）</div>
-  </div>
+  <h1>USEで日本語ポジ/ネガ推定（ゼロショット・類似度）</h1>
 
   <label for="text">テキスト</label>
   <textarea id="text" placeholder="例）今日は最高の気分だ。でも少し不安もある。"></textarea>
-  <div class="muted">※ 入力停止から約300msでブラウザ内LLMが推定。通信はモデル取得時のみ。</div>
+  <div class="muted">
+    ※ Universal Sentence Encoder で埋め込み → ポジ/ネガの代表文とコサイン類似度を比較。<br>
+    ※ しきい値は調整可。完全クライアント・鍵不要。
+  </div>
 
   <div class="panel">
     <div>判定: <span id="label" class="badge">-</span></div>
-    <div>score: <span id="score" class="mono">-</span></div>
+    <div>score(+-): <span id="score" class="mono">-</span></div>
     <hr>
-    <div>理由:</div>
-    <pre id="reasons" class="mono">-</pre>
-    <hr>
-    <div>生出力:</div>
-    <pre id="raw" class="mono">-</pre>
-    <div class="err" id="err"></div>
+    <div>詳細:</div>
+    <pre id="detail" class="mono">-</pre>
   </div>
 
-  <!-- WebLLM（CDN） -->
-  <script src="https://unpkg.com/@mlc-ai/web-llm/dist/webllm.min.js"></script>
+  <!-- USE 本体（TFJS依存は内部でロードされます） -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/universal-sentence-encoder@1.3.3/dist/universal-sentence-encoder.min.js"></script>
+
   <script>
-    // -------------------------------
+    // ---------------------------------------------
     // 設定
-    // -------------------------------
-    // 小型・日本語OK・API不要。WebGPU推奨（未対応はWASMで遅くなる）
-    const MODEL = "Qwen2.5-0.5B-Instruct-q4f16_1";
-    // 他候補: "Qwen2.5-1.5B-Instruct-q4f16_1"（精度↑/容量↑）
+    // ---------------------------------------------
+    // ポジ/ネガのプロトタイプ文。必要に応じて増やすと精度が上がる。
+    const POS_PROTOS = [
+      '嬉しい', '楽しい', '最高だ', '大好き', '幸せ', '素晴らしい', '満足している', 'ありがたい',
+      'ワクワクする', '快適だ', '最高の気分だ', '心が躍る', '応援したい', '素敵だ'
+    ];
+    const NEG_PROTOS = [
+      '最悪だ', '嫌い', '悲しい', '腹が立つ', 'イライラする', '不安だ', 'つらい', 'しんどい',
+      '不快だ', '後悔している', '絶望だ', '怖い', 'やめたい', 'むかつく'
+    ];
 
-    // 出力フォーマットを固定して安定化
-    const SYS = `
-あなたは感情分析器。入力文の全体的な感情を次のJSONだけで出力。
-{"label":"POSITIVE|NEGATIVE|NEUTRAL","score":-1.0〜1.0,"reasons":"日本語の簡潔な根拠"}
-余計な文章は出力しない。
-`.trim();
+    // しきい値: |posSim - negSim| がこの値未満なら NEUTRAL 扱い
+    const NEUTRAL_MARGIN = 0.05;
 
-    // -------------------------------
-    // 要素参照
-    // -------------------------------
-    const $ = id => document.getElementById(id);
-    const prog=$('prog'), status=$('status');
-    const t=$('text'), labelEl=$('label'), scoreEl=$('score'), reasonsEl=$('reasons'), rawEl=$('raw'), errEl=$('err');
+    // ---------------------------------------------
+    // ユーティリティ
+    // ---------------------------------------------
+    function dot(a,b){ let s=0; for(let i=0;i<a.length;i++) s+=a[i]*b[i]; return s; }
+    function norm(a){ return Math.sqrt(dot(a,a)); }
+    function cosine(a,b){ return dot(a,b) / (norm(a)*norm(b) + 1e-12); }
 
-    // -------------------------------
-    // モデル初期化
-    // -------------------------------
-    let engine=null;
-    init();
-    async function init(){
-      try{
-        status.textContent = 'モデル初期化中…';
-        engine = await webllm.CreateMLCEngine(MODEL, {
-          // 進捗表示
-          onProgress: (p) => {
-            if (typeof p === 'number') { prog.value = p; status.textContent = `ダウンロード中… ${Math.round(p*100)}%`; }
-            else if (p?.text) { status.textContent = p.text; }
-          },
-        });
-        status.textContent = '準備完了';
-        // 初回ウォームアップ（短文でプロンプト整形）
-        await analyzeOnce('テスト');
-      }catch(e){
-        errEl.textContent = '初期化失敗: ' + e;
-      }
+    // ---------------------------------------------
+    // モデルとプロトタイプ埋め込みの準備
+    // ---------------------------------------------
+    let useModel = null;
+    let posEmbeds = null;
+    let negEmbeds = null;
+
+    async function setup(){
+      // USE 読み込み
+      useModel = await use.load();
+      // プロトタイプ文をまとめて埋め込み
+      const texts = POS_PROTOS.concat(NEG_PROTOS);
+      const em = await useModel.embed(texts);
+      const arr = await em.array();
+      posEmbeds = arr.slice(0, POS_PROTOS.length);
+      negEmbeds = arr.slice(POS_PROTOS.length);
+      em.dispose();
     }
 
-    // -------------------------------
-    // 推定（1回）
-    // -------------------------------
-    async function analyzeOnce(text){
-      if (!engine) throw new Error('engine not ready');
-      const user = `入力文:\n${text}`;
-      const prompt = [
-        { role: "system", content: SYS },
-        { role: "user", content: user }
-      ];
-      // 生成
-      const out = await engine.chat.completions.create({
-        messages: prompt,
-        temperature: 0.1,
-        max_tokens: 200,
-      });
-      const content = out.choices?.[0]?.message?.content ?? '';
-      rawEl.textContent = content || '(空)';
-      // JSON抽出
-      let parsed=null;
-      try { parsed = JSON.parse(content); }
-      catch {
-        const m = content.match(/{[\s\S]*}/);
-        if (m) { try{ parsed = JSON.parse(m[0]); }catch{} }
-      }
-      if (!parsed) throw new Error('JSON抽出に失敗: ' + content);
+    // ---------------------------------------------
+    // 推定: 入力文 → 埋め込み → 類似度集約
+    // ---------------------------------------------
+    async function predict(text){
+      const em = await useModel.embed([text]);
+      const [vec] = await em.array();
+      em.dispose();
 
-      const L = String(parsed.label||'').toUpperCase();
-      const label = L.includes('POS') ? 'POSITIVE' : L.includes('NEG') ? 'NEGATIVE' :
+      // 類似度を平均（中央値や最大でも可）
+      let pos = 0, neg = 0;
+      for (const v of posEmbeds) pos += cosine(vec, v);
+      for (const v of negEmbeds) neg += cosine(vec, v);
+      pos /= posEmbeds.length;
+      neg /= negEmbeds.length;
+
+      // スコア: 差分を [-1,1] に近似（単純正規化）
+      // cos類似度は[-1,1]。差の/2で概形を作る。
+      const score = Math.max(-1, Math.min(1, (pos - neg)));
+
+      let label = 'NEUTRAL';
+      if (score > NEUTRAL_MARGIN) label = 'POSITIVE';
+      else if (score < -NEUTRAL_MARGIN) label = 'NEGATIVE';
+
+      return { label, score: Number(score.toFixed(3)), posSim: Number(pos.toFixed(3)), negSim: Number(neg.toFixed(3)) };
+    }
+
+    // ---------------------------------------------
+    // UI
+    // ---------------------------------------------
+    const $ = id => document.getElementById(id);
+    const t = $('text'), labelEl = $('label'), scoreEl = $('score'), detailEl = $('detail');
+
+    let ready = false;
+    (async () => {
+      // 初期化
+      labelEl.textContent = '読み込み中…';
+      await setup();
+      ready = true;
+      labelEl.textContent = '-';
+      // デモ
+      t.value = '今日は最高の気分だ。でも少し不安もある。';
+      run();
+    })();
+
+    let timer=null;
+    t.addEventListener('input', ()=>{ clearTimeout(timer); timer=setTimeout(run,300); });
+
+    async function run(){
+      if (!ready) return;
+      const text = t.value.trim();
+      if (!text){ labelEl.textContent='-'; scoreEl.textContent='-'; detailEl.textContent='-'; return; }
+      const r = await predict(text);
+      labelEl.textContent = r.label;
+      scoreEl.textContent = String(r.score);
+      detailEl.textContent = `posSim=${r.posSim}, negSim=${r.negSim}`;
+    }
+
+    // ---------------------------------------------
+    // メモ
+    // - プロトタイプ文を増やすとロバストになる（皮肉・業界語なども追加）。
+    // - 集約は「平均」以外に「最大」「加重平均（強い代表文に重み）」も試せる。
+    // - 日本語分かち書きは不要（USEは文ベクトル）。
+    // - 多言語USEでは日本語の質が英語ほど高くない可能性がある。必要なら
+    //   日本語特化埋め込み（e.g. LaBSE, multilingual MPNet）に置き換えを検討。
+    // ---------------------------------------------
+  </script>
+</body>
+</html>
