@@ -47,24 +47,7 @@ auth.onAuthStateChanged(async (authUser) => {
     document.getElementById('notSigned' ).style.display = 'none';
     toViewScreen();
 
-    // 全体のリアルタイム更新監視
-    const playersRef = database.ref('players/');
-    playersRef.on('value', (snapshot) => {
-        if (snapshot.exists()) {
-            // 家族内の投稿を監視・追加
-            const data = snapshot.val();
-
-            const playersArray = Object.entries(data).map(([userId, playerData]) => ({
-                userId,
-                name: playerData.Name || "名無し",
-            }));
-
-        } else {
-            console.log("プレイヤーデータが存在しません");
-        }
-    }, (error) => {
-        console.error("データ取得エラー:", error);
-    });
+    Follow_uid_list.forEach(uid => attachPostStreamForUid(uid));
 });
 
 

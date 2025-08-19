@@ -169,11 +169,30 @@ async function post() {
 
 
 const Follow_uid_list = ["I5wUbCT8cXRdwjXjSTI4ORJzoWh1"]
+const shownPostIds = new Set();
 
+function attachPostStreamForUid(uid) {
+    const query = database
+        .ref(`players/${uid}/posts`)
+        .orderByChild('createdAt')
+        .limitToLast(10);
+
+    const handler = (snap) => {
+        const val = snap.val() || {};
+        const postId = snap.key;
+        if (!postId) return;
+        if (!val.text || !String(val.text).trim()) return;
+        if (shownPostIds.has(postId)) return;
+
+        renderPost(postId, uid)
+        .then(() => shownPostIds.add(postId)); // ← コールバックで追加
+    };
+
+    query.on('child_added', handler);
+}
 
 async function getRecentFollowerPostIds(followerUids) {
     if (!followerUids || followerUids.length === 0) return [];
-
     const collected = [];
 
     await Promise.all(followerUids.map(async (uid) => {
@@ -184,49 +203,61 @@ async function getRecentFollowerPostIds(followerUids) {
             const val = child.val() || {};
             if (val.text && val.text.trim().length > 0) {
                 collected.push({
+                    uid, // 追加
                     postId: child.key,
                     createdAt: typeof val.createdAt === "number" ? val.createdAt : 0
                 });
             }
         });
     }));
-
-    // 全体をcreatedAt降順に並べて10件だけpostIdを返す
+    // 全体をcreatedAt降順に並べて10件だけ返す
     collected.sort((a, b) => b.createdAt - a.createdAt);
-    return collected.slice(0, 10).map(item => item.postId);
+    return collected.slice(0, 10).map(item => ({
+        uid: item.uid,
+        postId: item.postId
+    }));
 }
 
+
+
+async function renderPost(postId, uid) {
+    let n = showed_PostId_list.length;
+
+    const post_div = document.createElement("div");
+    post_div.id = `post_${n}`;
+    post_div.style.width = "100%";
+    post_div.style.height = "auto";
+    post_div.style.border = "1px solid #000";
+    post_div.style.margin = "0 5px 0 5px";
+
+    const img_tag = document.createElement("img");
+    img_tag.alt = "base64 image";
+    img_tag.id  = `img_${n}`;
+
+    const text_tag = document.createElement("p");
+    text_tag.id = `txt_${n}`;
+
+    await loadFromRTDB(postId, uid, img_tag, text_tag).catch(console.error);
+
+    img_tag.width  = 200;
+    img_tag.height = 200;
+
+    post_div.appendChild(text_tag);
+    if (img_tag.src) post_div.appendChild(img_tag);
+    document.getElementById("viewScreen").appendChild(post_div);
+}
 
 async function toViewScreen() {
     // NoSQLサーバーから最近の投稿をとってくる
     // uid と postId は保存時のものを渡す
-    //loadImageFromRTDBの、すべての引数を自動で決定してほしい。いったん対象をすべてに広げて。
-    const postIds = await getRecentFollowerPostIds(Follow_uid_list);
-    for (let [n, postId] of postIds.entries()) {
-        const post_div = document.createElement("div");
-        post_div.id = `post_${n}`;
-        post_div.style.width = "100%";
-        post_div.style.height = "auto";
-        post_div.style.border = "1px solid #000";
-        post_div.style.margin = "0 5px 0 5px";
+    const posts = await getRecentFollowerPostIds(Follow_uid_list);
 
-        const img_tag = document.createElement("img");
-        img_tag.alt = "base64 image";
-        img_tag.id  = `img_${n}`;
-
-        const text_tag = document.createElement("p");
-        text_tag.id = `txt_${n}`;
-
-        await loadFromRTDB(postId, Follow_uid_list[0], img_tag, text_tag).catch(console.error);
-
-        img_tag.width  = 200;
-        img_tag.height = 200;
-
-        post_div.appendChild(text_tag);
-        if (img_tag.src) post_div.appendChild(img_tag);
-        document.getElementById("viewScreen").appendChild(post_div);
+    for (let i = 0; i < posts.length; i++) {
+        const { postId, uid } = posts[i];
+        renderPost(postId, uid);
     }
 }
+
 
 
 
