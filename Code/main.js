@@ -491,28 +491,30 @@ async function renderPost(postId, uid, position = 'top') {
  *   最後に oldestLoadedTime を画面内の最小 createdAt に更新。
  * 既存の toViewScreen 名は connectDB.js から呼ばれるため維持
  */
-// ===== 修正: 初期ロードを全員対象に =====
+// ===== 修正: 全体から取得して描画 =====
 async function toViewScreen() {
     const page = await collectAllPage(null, postsPerPage);
     if (page.length === 0) {
         loadMoreBtn.style.display = "none";
         return;
     }
-    // 降順（新しい→古い）で末尾追加
+
     for (let i = 0; i < page.length; i++) {
         const { postId, uid } = page[i];
         await renderPost(postId, uid, 'bottom');
     }
+
     oldestLoadedTime = page[page.length - 1].createdAt;
     loadMoreBtn.style.display = isAtBottom(viewScreen) ? "block" : "none";
 }
 
+
 // 「さらに読み込む」: 今の最古よりさらに古い塊を取得して末尾に追加
+// ===== 修正: 全体からの過去ページを追加 =====
 loadMoreBtn.addEventListener("click", async () => {
     if (loadMoreBtn.disabled) return;
 
     const wasAtBottom = isAtBottom(viewScreen);
-
     loadMoreBtn.disabled = true;
     const prevLabel = loadMoreBtn.textContent;
     loadMoreBtn.textContent = "読み込み中...";
@@ -524,10 +526,12 @@ loadMoreBtn.addEventListener("click", async () => {
             loadMoreBtn.style.display = isAtBottom(viewScreen) ? "block" : "none";
             return;
         }
+
         for (let i = 0; i < page.length; i++) {
             const { postId, uid } = page[i];
             await renderPost(postId, uid, 'bottom');
         }
+
         oldestLoadedTime = page[page.length - 1].createdAt;
 
         if (wasAtBottom) {
@@ -543,6 +547,7 @@ loadMoreBtn.addEventListener("click", async () => {
         setTimeout(() => { loadMoreBtn.disabled = false; }, LOAD_DELAY_MS);
     }
 });
+
 
 
 
@@ -852,7 +857,6 @@ function switchTab(tab) {
 
 
 
-
 // ===== 追加: 全員の投稿を集めるページャ =====
 async function collectAllPage(beforeTime, limit = postsPerPage) {
     const collected = [];
@@ -864,8 +868,7 @@ async function collectAllPage(beforeTime, limit = postsPerPage) {
         const postsSnap = playerSnap.child("posts");
         postsSnap.forEach(child => {
             const val = child.val() || {};
-            // 空テキストは除外
-            if (!val.text || !val.text.trim()) return;
+            if (!val || !val.text || !val.text.trim()) return;
             const ts = typeof val.createdAt === "number" ? val.createdAt : 0;
             if (beforeTime == null || ts < beforeTime) {
                 collected.push({ uid, postId: child.key, createdAt: ts });
@@ -873,34 +876,36 @@ async function collectAllPage(beforeTime, limit = postsPerPage) {
         });
     });
 
-    // 新しい→古い
     collected.sort((a, b) => b.createdAt - a.createdAt);
     return collected.slice(0, limit);
 }
 
-// ===== 追加: 全ユーザーの最新投稿をリアルタイム購読 =====
-// 既存の attachPostStreamForUid を各ユーザーに動的に適用する。
-// Follow_uid_list の静的依存を排除する:contentReference[oaicite:0]{index=0}。
-const _attachedPostStreams = new Set();
-async function attachGlobalPostStream() {
-    // 既存ユーザーにアタッチ
-    const playersSnap = await database.ref("players").get();
-    if (playersSnap.exists()) {
-        playersSnap.forEach(playerSnap => {
-            const uid = playerSnap.key;
-            if (!_attachedPostStreams.has(uid)) {
-                _attachedPostStreams.add(uid);
-                attachPostStreamForUid(uid);
-            }
-        });
+// ===== 追加: 全体を .on で監視（新規投稿を先頭に挿入） =====
+function attachGlobalPostsOn() {
+    // uid -> { ref, handler } を保持して二重アタッチ防止
+    const listeners = new Map();
+
+    function attachFor(uid) {
+        if (listeners.has(uid)) return;
+        const ref = database.ref(`players/${uid}/posts`).limitToLast(1);
+        const handler = (snap) => {
+            const postId = snap.key;
+            if (!postId) return;
+            if (shownPostIds.has(postId)) return;
+            renderPost(postId, uid, 'top');
+        };
+        ref.on('child_added', handler);
+        listeners.set(uid, { ref, handler });
     }
-    // 新規ユーザー発生にも追従
-    database.ref("players").on("child_added", (snap) => {
-        const uid = snap.key;
-        if (!_attachedPostStreams.has(uid)) {
-            _attachedPostStreams.add(uid);
-            attachPostStreamForUid(uid);
-        }
+
+    // 既存ユーザーに付与
+    database.ref('players').once('value').then(s => {
+        s.forEach(ch => attachFor(ch.key));
+    });
+
+    // 新規ユーザーにも追従
+    database.ref('players').on('child_added', (snap) => {
+        attachFor(snap.key);
     });
 }
 
