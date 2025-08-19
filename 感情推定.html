@@ -1,41 +1,94 @@
-// 依存なし。環境変数 GOOGLE_TRANSLATE_API_KEY を Workers に設定しておく。
-// curl 例: https://translation.googleapis.com/language/translate/v2?key=...&q=TEXT&source=ja&target=en
-export default {
-  async fetch(request, env) {
-    const url = new URL(request.url);
-    if (url.pathname !== '/translate') return new Response('Not found', { status: 404 });
-    if (request.method !== 'POST') return new Response('Method Not Allowed', { status: 405 });
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <title>日本語→英語 翻訳経由 Toxicity 判定 (tfjs)</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 20px; }
+    textarea { width: 100%; height: 140px; font-size: 16px; }
+    .panel { border: 1px solid #ddd; border-radius: 8px; padding: 12px; margin-top: 12px; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; white-space:pre-wrap }
+    .badge { display:inline-block; padding:2px 8px; border-radius:12px; background:#eee; }
+    .muted { color:#666; font-size:12px; }
+  </style>
+</head>
+<body>
+  <h1>日本語→英語 翻訳経由 Toxicity 判定 (tfjs)</h1>
 
-    try {
-      const { text, source = 'ja', target = 'en' } = await request.json();
+  <label for="text">テキスト（日本語）</label>
+  <textarea id="text" placeholder="例）お前なんて大嫌いだ。"></textarea>
+  <div class="muted">※ 入力停止から約300msで翻訳→英語モデルで判定（ブラウザ実行）。</div>
 
-      if (!text || typeof text !== 'string') {
-        return new Response(JSON.stringify({ error: 'text required' }), { status: 400 });
+  <div class="panel">
+    <div>翻訳(EN): <span id="en" class="mono">-</span></div>
+    <hr>
+    <div>判定:</div>
+    <pre id="out" class="mono">-</pre>
+  </div>
+
+  <!-- 先に TFJS を読み込む -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.18.0/dist/tf.min.js"></script>
+  <!-- 次に toxicity モデル -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/toxicity@1.2.2"></script>
+
+  <script>
+    // デバウンス
+    const $ = (id) => document.getElementById(id);
+    const t = $('text'), en = $('en'), out = $('out');
+    let timer = null, modelPromise = null;
+
+    // toxicity モデルを遅延ロード
+    async function getModel() {
+      if (!modelPromise) {
+        await tf.ready();                 // 必須: tf を先に初期化
+        modelPromise = toxicity.load(0.9); // 閾値0.9
       }
-
-      const params = new URLSearchParams({
-        q: text,
-        source,
-        target,
-        format: 'text',
-        key: env.GOOGLE_TRANSLATE_API_KEY
-      });
-
-      const r = await fetch('https://translation.googleapis.com/language/translate/v2?' + params.toString(), {
-        method: 'POST'
-      });
-      if (!r.ok) {
-        const body = await r.text();
-        return new Response(JSON.stringify({ error: 'gtranslate failed', body }), { status: 502 });
-      }
-      const j = await r.json();
-      const translated = j?.data?.translations?.[0]?.translatedText ?? '';
-
-      return new Response(JSON.stringify({ text: translated }), {
-        headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }
-      });
-    } catch (e) {
-      return new Response(JSON.stringify({ error: String(e) }), { status: 500 });
+      return modelPromise;
     }
-  }
-};
+
+    t.addEventListener('input', () => {
+      clearTimeout(timer);
+      timer = setTimeout(run, 300);
+    });
+
+    async function run() {
+      const ja = t.value.trim();
+      if (!ja) { en.textContent = '-'; out.textContent = '-'; return; }
+
+      try {
+        // 1) 日本語→英語 翻訳（鍵はサーバ側で保持。/translate は後述のエッジ関数）
+        const res = await fetch('/translate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: ja, source: 'ja', target: 'en' })
+        });
+        if (!res.ok) throw new Error('translate failed: HTTP ' + res.status);
+        const data = await res.json();
+        const eng = data.text || '';
+        en.textContent = eng || '(空)';
+
+        // 2) 英語 toxicity 判定
+        const model = await getModel();
+        const predictions = await model.classify([eng]); // sentencesは配列
+
+        // 出力を文軸で整形（今回は単一文 index=0）
+        const i = 0;
+        const lines = [];
+        predictions.forEach(pred => {
+          const r = pred.results[i];
+          if (r?.match) lines.push(`${pred.label}: 有害と判定 (p≈${r?.probabilities?.[1]?.toFixed?.(3) ?? '?'})`);
+        });
+        out.textContent = lines.length ? lines.join('\n') : 'どのカテゴリも閾値未満';
+      } catch (e) {
+        out.textContent = String(e);
+        console.error(e);
+      }
+    }
+
+    // デモ用初期値
+    t.value = 'お前なんて大嫌いだ。';
+    run();
+  </script>
+</body>
+</html>
