@@ -13,7 +13,6 @@
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-storage-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 
-
   <!-- 3) その後に connectDB を通常スクリプトとして -->
   <script src="connectDB.js"></script>
 </head>
@@ -26,6 +25,9 @@
 
     <!-- ログインしてたら表示 -->
     <div id="viewScreen" style="display:none;overflow-y:scroll;height:calc(100vh - 70px)"></div>
+
+    <!-- さらに読み込む（画面下部固定） -->
+    <button id="loadMoreBtn" style="display:none;">さらに読み込む</button>
 
     <div id="postScreen" style="display:none;">
         <div class="InputForm">

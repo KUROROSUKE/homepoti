@@ -1,4 +1,3 @@
-
 let delay_time = 10; //10秒たつまで再投稿はできない
 
 // ============ indexedDB actions ============
@@ -168,21 +167,56 @@ async function post() {
 
 
 
+
 const Follow_uid_list = ["I5wUbCT8cXRdwjXjSTI4ORJzoWh1"]
 const shownPostIds = new Set();
+
+// ===== ページネーション用の状態 =====
+let oldestLoadedTime = null;           // 画面にある中で最も古い createdAt
+const postsPerPage = 10;               // 1回の読み込み件数
+const LOAD_DELAY_MS = 1500;            // 連打防止の待ち
+const loadMoreBtn = document.getElementById("loadMoreBtn");
+
+/**
+ * 全件取得してローカルでフィルタ＆ソート（インデックス不要）:contentReference[oaicite:3]{index=3}
+ * beforeTime が null のときは最新から limit 件。
+ * beforeTime が数値のときは createdAt < beforeTime の範囲から limit 件（＝今より次に古い塊）。
+ */
+async function collectMergedPage(followerUids, beforeTime, limit = postsPerPage) {
+    if (!followerUids || followerUids.length === 0) return [];
+    const collected = [];
+
+    await Promise.all(followerUids.map(async (uid) => {
+        const snap = await database.ref(`players/${uid}/posts`).get(); // orderByChildは使わない
+        if (!snap.exists()) return;
+
+        snap.forEach(child => {
+            const val = child.val() || {};
+            if (!val || !val.text || !val.text.trim()) return;
+            const ts = typeof val.createdAt === "number" ? val.createdAt : 0;
+            if (beforeTime == null || ts < beforeTime) {
+                collected.push({ uid, postId: child.key, createdAt: ts });
+            }
+        });
+    }));
+
+    // 降順（新しい→古い）で並べ、上から limit 件だけ返す
+    collected.sort((a, b) => b.createdAt - a.createdAt);
+    return collected.slice(0, limit);
+}
 
 function attachPostStreamForUid(uid) {
     const query = database
         .ref(`players/${uid}/posts`)
-        .orderByChild('createdAt')
-        .limitToLast(1);
+        .limitToLast(1); // 最新1件だけ監視（orderByChild不要で既定キー順）
 
     const handler = (snap) => {
         const postId = snap.key;
         if (!postId) return;
         if (shownPostIds.has(postId)) return;
 
-        renderPost(postId, uid);
+        // 新規は上に挿入
+        renderPost(postId, uid, 'top');
     };
 
     query.on('child_added', handler);
@@ -216,7 +250,12 @@ async function getRecentFollowerPostIds(followerUids) {
 }
 
 
-async function renderPost(postId, uid) {
+/**
+ * position:
+ *  - 'top'    : 先頭へ挿入（新規投稿など）
+ *  - 'bottom' : 末尾へ追加（過去ロード）
+ */
+async function renderPost(postId, uid, position = 'top') {
     let n = shownPostIds.size;
 
     const post_div = document.createElement("div");
@@ -242,24 +281,70 @@ async function renderPost(postId, uid) {
     if (img_tag.src) post_div.appendChild(img_tag);
 
     const container = document.getElementById("viewScreen");
-    if (container.firstChild) {
-        container.insertBefore(post_div, container.firstChild); // 常に先頭へ
+    if (position === 'top' && container.firstChild) {
+        container.insertBefore(post_div, container.firstChild); // 先頭へ
     } else {
-        container.appendChild(post_div);
+        container.appendChild(post_div); // 末尾へ
     }
 
     shownPostIds.add(postId);
 }
 
+/**
+ * 初期ロード:
+ *   最新から limit 件を降順で取得し、その順で末尾追加。
+ *   → 画面全体は上が新しい、下が古い。
+ *   最後に oldestLoadedTime を画面内の最小 createdAt に更新。
+ * 既存の toViewScreen 名は connectDB.js から呼ばれるため維持:contentReference[oaicite:4]{index=4}:contentReference[oaicite:5]{index=5}
+ */
 async function toViewScreen() {
-    const posts = await getRecentFollowerPostIds(Follow_uid_list);
-
-    // 配列を逆順ループして、常に先頭に追加
-    for (let i = posts.length - 1; i >= 0; i--) {
-        const { postId, uid } = posts[i];
-        renderPost(postId, uid);
+    const page = await collectMergedPage(Follow_uid_list, null, postsPerPage);
+    if (page.length === 0) {
+        loadMoreBtn.style.display = "none";
+        return;
     }
+
+    // 降順（新しい→古い）でそのまま末尾へ追加
+    for (let i = 0; i < page.length; i++) {
+        const { postId, uid } = page[i];
+        await renderPost(postId, uid, 'bottom');
+    }
+
+    // 画面中の最も古い createdAt を保持
+    oldestLoadedTime = page[page.length - 1].createdAt;
+    loadMoreBtn.style.display = "block";
 }
+
+// 「さらに読み込む」: 今の最古よりさらに古い塊を取得して末尾に追加
+loadMoreBtn?.addEventListener("click", async () => {
+    if (loadMoreBtn.disabled) return;
+    loadMoreBtn.disabled = true;
+    const prevLabel = loadMoreBtn.textContent;
+    loadMoreBtn.textContent = "読み込み中...";
+
+    try {
+        const page = await collectMergedPage(Follow_uid_list, oldestLoadedTime, postsPerPage);
+        if (page.length === 0) {
+            loadMoreBtn.textContent = "これ以上ありません";
+            return;
+        }
+
+        // 取得したページを降順で末尾追加
+        for (let i = 0; i < page.length; i++) {
+            const { postId, uid } = page[i];
+            await renderPost(postId, uid, 'bottom');
+        }
+
+        // 次の基準を更新（今回ページ内で最も古い）
+        oldestLoadedTime = page[page.length - 1].createdAt;
+        loadMoreBtn.textContent = prevLabel;
+    } catch (e) {
+        console.error(e);
+        loadMoreBtn.textContent = "エラー。再試行";
+    } finally {
+        setTimeout(() => { loadMoreBtn.disabled = false; }, LOAD_DELAY_MS);
+    }
+});
 
 
 
