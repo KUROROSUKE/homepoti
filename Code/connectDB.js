@@ -244,8 +244,12 @@ async function loadFromRTDB(postId, uid, img_tag, txt_tag) {
 // Sign up with email & password
 function SignUpWithMail() {
     const email = prompt("メールアドレスを入力してください:");
-    const password = prompt("パスワードを入力してください（6文字以上）:");
-    
+    if (!email) {
+        alert("メールアドレスを入力してください");
+        return;
+    }
+
+    const password = prompt("パスワードを設定してください（6文字以上）:");
     if (!email || !password) {
         alert("メールアドレスとパスワードを入力してください");
         return;
@@ -266,7 +270,7 @@ function SignUpWithMail() {
 // Login with email & password
 function loginWithMail() {
     const email = prompt("メールアドレスを入力してください:");
-    const password = prompt("パスワードを入力してください:");
+    const password = prompt("設定したパスワードを入力してください:");
     
     if (!email || !password) {
         alert("メールアドレスとパスワードを入力してください");
