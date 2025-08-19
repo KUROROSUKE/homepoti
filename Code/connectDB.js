@@ -158,7 +158,7 @@ async function upload(text_data, image_data) {
 
 
 // Base64 → Blob
-function base64ToBlob(base64, mime = "image/jpeg") {
+function base64ToBlob(base64, img_tag_id, mime = "image/jpeg") {
   const bin = atob(base64);
   const len = bin.length;
   const u8 = new Uint8Array(len);
@@ -167,7 +167,7 @@ function base64ToBlob(base64, mime = "image/jpeg") {
 }
 
 // Realtime Database から復元
-async function loadImageFromRTDB(postId, uid) {
+async function loadImageFromRTDB(postId, uid, img_tag_id) {
   const snap = await database.ref(`players/${uid}/posts/${postId}/image`).get();
   if (!snap.exists()) throw new Error("image not found");
 
@@ -178,11 +178,11 @@ async function loadImageFromRTDB(postId, uid) {
   const base64 = image.chunks.join("");
 
   // 2) Blob に変換（JPEG 固定）
-  const blob = base64ToBlob(base64, "image/jpeg");
+  const blob = base64ToBlob(base64, img_tag_id);
 
   // 3) URL 生成して <img> に表示
   const url = URL.createObjectURL(blob);
-  document.getElementById("post1").src = url; //TODO: 後でやる
+  document.getElementById(img_tag_id).src = url; //TODO: 後でやる
 
   return { blob, url };
 }
