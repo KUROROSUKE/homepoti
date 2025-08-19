@@ -7,36 +7,32 @@
     <link rel="stylesheet" href="main.css" />
     <title>褒めポチ</title>
 
-    <!-- 1) Firebase compat を必ず先に -->
+    <!-- Firebase compat -->
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-storage-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
-    <!-- 3) その後に connectDB を通常スクリプトとして -->
+
     <script src="connectDB.js"></script>
 </head>
 <body>
-    <!-- ★ 追加: コインHUD（ログイン時に表示） -->
-    <div id="coinHUD" aria-label="coin HUD" style="display:none;">
-      🪙 <span id="coinBalance">0</span>
-    </div>
-
     <!-- 効果音（任意） -->
     <audio id="ordersSound" preload="auto">
       <source src="data:audio/mp3;base64,//uQZAAAAAAAAAAAAAAAAAAAA" type="audio/mpeg">
     </audio>
 
-    <!-- ログインしてなかったら表示 -->
+    <!-- 未ログイン -->
     <div style="text-align: center;" id="notSigned">
         <h3>ログインしてください</h3>
         <button onclick="loginWithGoogle()">Googleでログイン</button>
     </div>
 
-    <!-- ログインしてたら表示: 3タブ -->
+    <!-- 投稿一覧 -->
     <div id="viewScreen" style="display:none;overflow-y:scroll;height:calc(100vh - 70px)">
         <button id="loadMoreBtn" style="display:none;">さらに読み込む</button>
     </div>
 
+    <!-- 投稿する -->
     <div id="postScreen" style="display:none;">
         <div class="InputForm">
         <textarea id="postTextInput" placeholder="今日はなにした？" maxlength="280"></textarea>
@@ -47,7 +43,7 @@
         </div>
     </div>
 
-    <!-- ★ 新規: 自分のサービス管理 -->
+    <!-- サービス管理 -->
     <div id="servicesScreen" style="display:none;">
       <div class="InputForm">
         <h3>サービスを登録</h3>
@@ -69,14 +65,20 @@
       </div>
     </div>
 
-    <!-- ★ 新規: マーケット -->
+    <!-- マーケット -->
     <div id="marketScreen" style="display:none;">
+      <!-- ★ コインHUDはマーケットだけで表示 -->
+      <div id="coinHUD" aria-label="coin HUD" style="display:none;">
+        🪙 <span id="coinBalance">0</span>
+      </div>
+
       <div class="InputForm">
         <h3>マーケット</h3>
         <div id="marketList" class="svc-list"></div>
       </div>
     </div>
 
+    <!-- ナビ -->
     <div id="bottomNav" style="display: none;">
         <div class="navigater">
           <button class="nav_buttons" onclick="switchTab('view')" aria-label="ViewScreen">投稿</button>
@@ -95,14 +97,7 @@
         </div>
     </div>
 
-    <script>
-        function switchTab(tab) {
-          document.getElementById("viewScreen").style.display      = (tab === "view") ? "block" : "none";
-          document.getElementById("postScreen").style.display      = (tab === "post") ? "block" : "none";
-          document.getElementById("servicesScreen").style.display  = (tab === "services") ? "block" : "none";
-          document.getElementById("marketScreen").style.display    = (tab === "market") ? "block" : "none";
-        }
-    </script>
+    <!-- switchTab は main.js 側で定義 -->
     <script src="main.js"></script>
 </body>
 </html>

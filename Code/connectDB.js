@@ -20,7 +20,7 @@ function getRandomName() {
     return rand;
 }
 
-// === 追加: コイン操作の基本関数 ===
+// === 追加: コイン操作の基本関数（既存仕様維持） ===
 /**
  * coins を ±delta する。負の値も可。0未満にはしない。
  */
@@ -49,6 +49,11 @@ async function spendCoins(uid, amount) {
     return ok;
 }
 
+// ★ 追加: 参照取得ヘルパ（HUD側で使う）
+function coinsRef(uid) {
+    return database.ref(`players/${uid}/coins`);
+}
+
 auth.onAuthStateChanged(async (authUser) => {
     if (!authUser) return;
 
@@ -75,49 +80,20 @@ auth.onAuthStateChanged(async (authUser) => {
         }
     }
 
-    // ★ 追加: コメント投稿用に現在ユーザー名をグローバルへ保持
+    // ★ 追加: 現在ユーザー名/UIDを保持
     window.currentUserName = name || "anonymous";
-    // ★ 追加: UID も保持（コインAPI等で使用）
     window.currentUserUid = authUser.uid;
 
-    // 最初の画面反映
-    //TODO: document.getElementById('UserNameTag').textContent = `名前： ${name}`;
+    // 表示切替
     document.getElementById('viewScreen').style.display = 'block';
     document.getElementById("bottomNav") .style.display = "flex";
     document.getElementById('notSigned' ).style.display = 'none';
 
-    // ★ 追加: コインHUD表示と購読
-    const hud = document.getElementById('coinHUD');
-    const bal = document.getElementById('coinBalance');
-    if (hud && bal) {
-        hud.style.display = 'block';
-        database.ref(`players/${authUser.uid}/coins`).on('value', (s) => {
-            bal.textContent = typeof s.val() === 'number' ? s.val() : 0;
-        });
-    }
+    // ★ 重要: ここではコインHUDを表示しない（マーケットだけで表示する仕様のため）
 
-    // ★ 追加: 注文通知（自分宛の新規オーダー）
-    const ordersBadge = document.getElementById('ordersBadge');
-    const ordersSound = document.getElementById('ordersSound');
-    const myOrdersRef = database.ref(`players/${authUser.uid}/orders`);
-    myOrdersRef.limitToLast(1).on('child_added', (snap) => {
-        if (!snap.exists()) return;
-        if (ordersBadge) {
-            const cur = Number(ordersBadge.textContent || 0);
-            ordersBadge.textContent = String(cur + 1);
-            ordersBadge.style.display = 'inline-block';
-        }
-        if (ordersSound) {
-            try { ordersSound.currentTime = 0; ordersSound.play(); } catch {}
-        }
-    });
-
-    // ★ サービスとマーケットの購読開始
+    // 既存フロー
     if (window.initServicesAndMarket) window.initServicesAndMarket();
-
-    // ★ 修正点: 初期ロードを待ってからストリーム監視を開始する
     await toViewScreen();
-
     Follow_uid_list.forEach(uid => attachPostStreamForUid(uid));
 });
 
@@ -145,9 +121,9 @@ function logout() {
     document.getElementById("servicesScreen").style.display = "none";
     document.getElementById("marketScreen").style.display = "none";
     document.getElementById("notSigned" ).style.display = "block";
-    const hud = document.getElementById('coinHUD');
-    if (hud) hud.style.display = 'none'; // ★ コインHUDを隠す
+    // ★ HUDはマーケット配下にあるためここで触らない
 }
+
 
 
 async function upload(text_data, image_data) {

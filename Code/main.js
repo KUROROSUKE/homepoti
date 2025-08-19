@@ -804,3 +804,52 @@ window.initServicesAndMarket = function initServicesAndMarket() {
         });
     });
 };
+
+// ========================= 追加：マーケット専用コインHUD制御 =========================
+
+/**
+ * マーケット専用コインHUDコントローラを作る。
+ * - show(): HUD表示 + coins購読開始
+ * - hide(): HUD非表示 + coins購読停止
+ */
+function makeMarketCoinHUD() {
+    const hud = document.getElementById('coinHUD');
+    const bal = document.getElementById('coinBalance');
+    let ref = null;
+    let handler = null;
+
+    function start() {
+        const cu = auth.currentUser;
+        if (!hud || !bal || !cu) return;
+        hud.style.display = 'block';
+        ref = database.ref(`players/${cu.uid}/coins`);
+        handler = (s) => { bal.textContent = typeof s.val() === 'number' ? s.val() : 0; };
+        ref.on('value', handler);
+    }
+    function stop() {
+        if (ref && handler) ref.off('value', handler);
+        if (hud) hud.style.display = 'none';
+        ref = null;
+        handler = null;
+    }
+    return { show: start, hide: stop };
+}
+
+const coinHUDController = makeMarketCoinHUD();
+
+/**
+ * タブ切り替え。マーケットのときだけHUDを表示。
+ */
+function switchTab(tab) {
+    document.getElementById("viewScreen").style.display      = (tab === "view") ? "block" : "none";
+    document.getElementById("postScreen").style.display      = (tab === "post") ? "block" : "none";
+    document.getElementById("servicesScreen").style.display  = (tab === "services") ? "block" : "none";
+    document.getElementById("marketScreen").style.display    = (tab === "market") ? "block" : "none";
+
+    if (tab === 'market') {
+        coinHUDController.show();
+    } else {
+        coinHUDController.hide();
+    }
+}
+// ========================= ここまで：マーケット専用コインHUD制御 =========================
