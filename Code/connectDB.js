@@ -71,48 +71,21 @@ function logout() {
 // Google login
 const provider = new firebase.auth.GoogleAuthProvider();
 
-// 端末と環境判定
-function isMobileUA() {
-  const ua = navigator.userAgent || "";
-  return /iPhone|iPad|iPod|Android/i.test(ua);
-}
-function isInAppBrowserUA() {
-  const ua = navigator.userAgent || "";
-  // 代表的なアプリ内ブラウザ
-  return /FBAN|FBAV|Instagram|Line|MicroMessenger|Twitter/i.test(ua);
-}
-
-async function loginWithGoogle() {
-  // モバイル or アプリ内ブラウザは最初から redirect が安定
-  const preferRedirect = isMobileUA() || isInAppBrowserUA();
-
-  try {
-    if (preferRedirect) {
-      // redirect 開始
-      sessionStorage.setItem("authRedirecting", "1"); // 進行中フラグ（任意）
-      await auth.signInWithRedirect(provider);
-      return;
-    }
-
-    // まずは PC で popup を試す
-    await auth.signInWithPopup(provider);
-  } catch (e) {
-    // popup がブロック・環境非対応などは redirect へ切替
-    const fallbackCodes = new Set([
-      "auth/operation-not-supported-in-this-environment",
-      "auth/popup-blocked",
-      "auth/popup-closed-by-user",
-      "auth/cancelled-popup-request"
-    ]);
-    if (fallbackCodes.has(e.code)) {
-      sessionStorage.setItem("authRedirecting", "1");
-      await auth.signInWithRedirect(provider);
-      return;
-    }
-    // それ以外は表面化
-    console.error("Google login failed:", e);
-    alert("ログインに失敗: " + (e && e.message ? e.message : e));
-  }
+// Google login
+function loginWithGoogle() {
+    const provider = new firebase.auth.GoogleAuthProvider();
+    auth.signInWithPopup(provider)
+    .then((result) => {
+        const user = result.user;
+        console.log("Google login success:", user);
+        document.getElementById("LoginModal").style.display = "none";
+        document.getElementById("UserDataModal").style.display = "block";
+        startPeer(); // or any function you want to call after login
+    })
+    .catch((error) => {
+        console.error("Google login failed: ", error);
+        alert("Googleログインに失敗しました");
+    });
 }
 
 
