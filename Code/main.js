@@ -187,9 +187,10 @@ async function toViewScreen() {
         .catch(console.error);
     img_tag.width  = 200;
     img_tag.height = 200;
-    
+
     post_div.appendChild(text_tag);
     post_div.appendChild(img_tag);
+    document.getElementById("viewScreen").appendChild(post_div);
 }
 
 

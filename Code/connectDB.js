@@ -167,9 +167,9 @@ function base64ToBlob(base64, mime = "image/jpeg") {
 }
 
 // Realtime Database から復元
-async function loadImageFromRTDB(postId, uid, img_tag_id, txt_tag_id) {
+async function loadFromRTDB(postId, uid, img_tag_id, txt_tag_id) {
     const snap1 = await database.ref(`players/${uid}/posts/${postId}/image`).get();
-    if (!snap.exists()) throw new Error("image not found");
+    if (!snap1.exists()) throw new Error("image not found");
 
     const image = snap1.val();
     if (!image.chunks) throw new Error("chunks missing");
