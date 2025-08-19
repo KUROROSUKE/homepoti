@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="utf-8" />
-  <title>USEで日本語ポジ/ネガ推定（完全クライアント）</title>
+  <title>USEで日本語ポジ/ネガ推定（完全クライアント・推論ボタン付）</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <!-- 404回避のダミーfavicon -->
   <link rel="icon" href="data:,">
@@ -13,6 +13,8 @@
     .mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre-wrap}
     .badge{display:inline-block;padding:2px 8px;border-radius:12px;background:#eee}
     .muted{color:#666;font-size:12px}
+    button{padding:8px 14px;border:1px solid #ccc;border-radius:8px;background:#f8f8f8;cursor:pointer}
+    button:disabled{opacity:.6;cursor:not-allowed}
   </style>
 </head>
 <body>
@@ -24,6 +26,10 @@
     ※ Universal Sentence Encoder で埋め込み → ポジ/ネガ代表文とコサイン類似度を比較。<br>
     ※ しきい値は調整可。完全クライアント・鍵不要。
   </div>
+  <p>
+    <button id="inferBtn">推論</button>
+    <span id="loadStat" class="muted"></span>
+  </p>
 
   <div class="panel">
     <div>判定: <span id="label" class="badge">-</span></div>
@@ -62,20 +68,27 @@
     // ---------------------------------------------
     // モデルとプロトタイプ埋め込みの準備
     // ---------------------------------------------
-    let useModel=null, posEmbeds=null, negEmbeds=null;
+    let useModel=null, posEmbeds=null, negEmbeds=null, ready=false;
 
     async function setup(){
-      // tf の初期化を待つ
-      await tf.ready();
-      // USE 読み込み（グローバル use）
-      useModel = await use.load();
-      // 代表文の埋め込みを先に計算してキャッシュ
-      const texts = POS_PROTOS.concat(NEG_PROTOS);
-      const em = await useModel.embed(texts);
-      const arr = await em.array();
-      posEmbeds = arr.slice(0, POS_PROTOS.length);
-      negEmbeds = arr.slice(POS_PROTOS.length);
-      em.dispose();
+      const stat = document.getElementById('loadStat');
+      try{
+        stat.textContent = 'モデル読み込み中…';
+        await tf.ready();
+        useModel = await use.load(); // USE 読み込み（グローバル use）
+        // 代表文の埋め込みを先に計算してキャッシュ
+        const texts = POS_PROTOS.concat(NEG_PROTOS);
+        const em = await useModel.embed(texts);
+        const arr = await em.array();
+        posEmbeds = arr.slice(0, POS_PROTOS.length);
+        negEmbeds = arr.slice(POS_PROTOS.length);
+        em.dispose();
+        ready = true;
+        stat.textContent = '準備完了';
+      }catch(e){
+        stat.textContent = '初期化失敗: ' + e;
+        console.error(e);
+      }
     }
 
     // ---------------------------------------------
@@ -105,35 +118,33 @@
     // ---------------------------------------------
     const $ = id => document.getElementById(id);
     const t = $('text'), labelEl = $('label'), scoreEl = $('score'), detailEl = $('detail');
+    const inferBtn = $('inferBtn');
 
-    let ready=false;
-    (async () => {
+    inferBtn.addEventListener('click', async ()=>{
+      if (!ready) return;
+      const text = t.value.trim();
+      if (!text){ labelEl.textContent='-'; scoreEl.textContent='-'; detailEl.textContent='-'; return; }
+      inferBtn.disabled = true;
+      inferBtn.textContent = '推論中…';
       try{
-        labelEl.textContent = '読み込み中…';
-        await setup();
-        ready=true;
-        labelEl.textContent='-';
-        t.value = '今日は最高の気分だ。でも少し不安もある。';
-        run();
+        const r = await predict(text);
+        labelEl.textContent = r.label;
+        scoreEl.textContent = String(r.score);
+        detailEl.textContent = `posSim=${r.posSim}, negSim=${r.negSim}`;
       }catch(e){
         labelEl.textContent='ERROR';
         scoreEl.textContent='?';
         detailEl.textContent=String(e);
+        console.error(e);
+      }finally{
+        inferBtn.disabled = false;
+        inferBtn.textContent = '推論';
       }
-    })();
+    });
 
-    let timer=null;
-    t.addEventListener('input', ()=>{ clearTimeout(timer); timer=setTimeout(run,300); });
-
-    async function run(){
-      if (!ready) return;
-      const text = t.value.trim();
-      if (!text){ labelEl.textContent='-'; scoreEl.textContent='-'; detailEl.textContent='-'; return; }
-      const r = await predict(text);
-      labelEl.textContent = r.label;
-      scoreEl.textContent = String(r.score);
-      detailEl.textContent = `posSim=${r.posSim}, negSim=${r.negSim}`;
-    }
+    // 初期デモ
+    t.value = '今日は最高の気分だ。でも少し不安もある。';
+    setup(); // 読み込み開始
   </script>
 </body>
 </html>
