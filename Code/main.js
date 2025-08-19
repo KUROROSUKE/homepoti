@@ -60,7 +60,6 @@ textInput.addEventListener('input', function () {
 
 
 
-
 async function viewImageCanvas(maxLong=300) {
     // ここでのmaxLongはテストで表示するcanvasの大きさ
     file = document.getElementById("fileInput").files[0];
@@ -166,8 +165,6 @@ async function post() {
 
 
 
-
-
 const Follow_uid_list = ["I5wUbCT8cXRdwjXjSTI4ORJzoWh1"]
 const shownPostIds = new Set();
 
@@ -176,6 +173,12 @@ let oldestLoadedTime = null;           // 画面にある中で最も古い crea
 const postsPerPage = 10;               // 1回の読み込み件数
 const LOAD_DELAY_MS = 1500;            // 連打防止の待ち
 const loadMoreBtn = document.getElementById("loadMoreBtn");
+
+// === 追加: 下端判定ユーティリティ（1px余裕） ===
+const viewScreen = document.getElementById("viewScreen");
+function isAtBottom(el) {
+    return el.scrollTop + el.clientHeight >= el.scrollHeight - 1;
+}
 
 /**
  * 全件取得してローカルでフィルタ＆ソート（インデックス不要）:contentReference[oaicite:3]{index=3}
@@ -312,12 +315,18 @@ async function toViewScreen() {
 
     // 画面中の最も古い createdAt を保持
     oldestLoadedTime = page[page.length - 1].createdAt;
-    loadMoreBtn.style.display = "block";
+
+    // 追加: 初期表示は下端に居るかどうかでボタン表示を決める
+    loadMoreBtn.style.display = isAtBottom(viewScreen) ? "block" : "none";
 }
 
 // 「さらに読み込む」: 今の最古よりさらに古い塊を取得して末尾に追加
 loadMoreBtn.addEventListener("click", async () => {
     if (loadMoreBtn.disabled) return;
+
+    // 追加: クリック時点で下端にいたかを記録
+    const wasAtBottom = isAtBottom(viewScreen);
+
     loadMoreBtn.disabled = true;
     const prevLabel = loadMoreBtn.textContent;
     loadMoreBtn.textContent = "読み込み中...";
@@ -326,6 +335,8 @@ loadMoreBtn.addEventListener("click", async () => {
         const page = await collectMergedPage(Follow_uid_list, oldestLoadedTime, postsPerPage);
         if (page.length === 0) {
             loadMoreBtn.textContent = "これ以上ありません";
+            // 下端に居るときだけ見せるルールを維持
+            loadMoreBtn.style.display = isAtBottom(viewScreen) ? "block" : "none";
             return;
         }
 
@@ -337,10 +348,21 @@ loadMoreBtn.addEventListener("click", async () => {
 
         // 次の基準を更新（今回ページ内で最も古い）
         oldestLoadedTime = page[page.length - 1].createdAt;
+
+        // 追加: 事前に下端だった場合は追従して下端へスクロール維持
+        if (wasAtBottom) {
+            viewScreen.scrollTop = viewScreen.scrollHeight - viewScreen.clientHeight;
+        }
+
         loadMoreBtn.textContent = prevLabel;
+
+        // 追加: 追従後に表示可否を再評価
+        loadMoreBtn.style.display = isAtBottom(viewScreen) ? "block" : "none";
     } catch (e) {
         console.error(e);
         loadMoreBtn.textContent = "エラー。再試行";
+        // エラー時も現在のスクロール位置に合わせて可視制御
+        loadMoreBtn.style.display = isAtBottom(viewScreen) ? "block" : "none";
     } finally {
         setTimeout(() => { loadMoreBtn.disabled = false; }, LOAD_DELAY_MS);
     }
@@ -348,14 +370,11 @@ loadMoreBtn.addEventListener("click", async () => {
 
 
 
-
 // コインと価値の実装
 // UIの改善
 // ====== スクロール位置による「さらに読み込む」制御 ======
-const viewScreen = document.getElementById("viewScreen");
-
 viewScreen.addEventListener("scroll", () => {
-    const nearBottom = viewScreen.scrollTop + viewScreen.clientHeight >= viewScreen.scrollHeight;
+    const nearBottom = isAtBottom(viewScreen);
     if (nearBottom) {
         loadMoreBtn.style.display = "block";
     } else {
