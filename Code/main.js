@@ -326,7 +326,49 @@ async function renderPost(postId, uid, position = 'top') {
     post_div.style.border = "1px solid #000";
     post_div.style.margin = "0 5px 0 5px";
     post_div.style.padding = "10px";
+    post_div.style.position = "relative"; // ★ 追加: 褒めるボタンの絶対配置用
 
+    // ★★★ 追加: 褒めるボタンUI + ロジック ★★★
+    const praiseBtn = document.createElement("button");
+    praiseBtn.className = "praise-btn";
+    praiseBtn.textContent = "褒める ";
+
+    const praiseCount = document.createElement("span");
+    praiseCount.className = "praise-count";
+    praiseCount.textContent = "0";
+    praiseBtn.appendChild(praiseCount);
+
+    // DB参照（この投稿のpraises配下）
+    const praisesRef = database.ref(`players/${uid}/posts/${postId}/praises`);
+
+    // リアルタイム購読で人数と自分の状態を反映
+    praisesRef.on("value", (snap) => {
+        const v = snap.val() || {};
+        const cnt = Object.keys(v).length;
+        praiseCount.textContent = String(cnt);
+        const cu = auth.currentUser;
+        if (cu && v[cu.uid]) {
+            praiseBtn.classList.add("active");
+        } else {
+            praiseBtn.classList.remove("active");
+        }
+    });
+
+    // トグル挙動
+    praiseBtn.addEventListener("click", async () => {
+        const cu = auth.currentUser;
+        if (!cu) { alert("ログインしてください"); return; }
+        const myRef = praisesRef.child(cu.uid);
+        const cur = await myRef.get();
+        if (cur.exists()) {
+            await myRef.remove();   // 取り消し
+        } else {
+            await myRef.set(true);  // 褒める
+        }
+    });
+
+    // 先にボタンを右上へ配置
+    post_div.appendChild(praiseBtn);
 
     const img_tag = document.createElement("img");
     img_tag.alt = "base64 image";

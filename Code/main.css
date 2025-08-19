@@ -151,3 +151,25 @@ html, body {
   opacity: 0.5;
   cursor: default;
 }
+
+/* ===== 褒めるボタン ===== */
+.praise-btn {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 9999px;
+  border: 1px solid #ccc;
+  background: #fff;
+  font-size: 12px;
+  cursor: pointer;
+}
+.praise-btn.active {
+  background: #fffbe6;
+  border-color: #f3b94c;
+}
+.praise-count {
+  margin-left: 4px;
+  font-weight: 600;
+}
