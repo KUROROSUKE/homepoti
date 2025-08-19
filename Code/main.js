@@ -162,24 +162,35 @@ async function post() {
 }
 
 
-function toViewScreen() {
+async function toViewScreen() {
     // NoSQLサーバーから最近の投稿をとってくる
     // uid と postId は保存時のものを渡す
     //loadImageFromRTDBの、すべての引数を自動で決定してほしい。いったん対象をすべてに広げて。
 
     let n = 1;
+    const post_div = document.createElement("div");
+    post_div.id = `post_${n}`;
+
     const img_tag = document.createElement("img");
     img_tag.alt = "base64 image";
-    let img_tag_id = `post${n}_img`;
+    let img_tag_id = `img_${n}`;
     img_tag.id = img_tag_id;
-    document.getElementById("viewScreen").appendChild(img_tag);
+
+    const text_tag = document.createElement("p");
+    let txt_tag_id = `txt_${n}`;
+    text_tag.id = txt_tag_id
+    const snap = await database.ref(`players/${uid}/posts/${postId}/text`).get();
+    text_tag.innerHTML = snap.val();
+    post_div.appendChild(text_tag);
+
     const uid = document.getElementById("uidInput").value;
     const postId = document.getElementById("postIdInput").value;
-    loadImageFromRTDB(postId, uid, img_tag_id)
+    loadFromRTDB(postId, uid, img_tag_id)
         .then(({url}) => console.log("表示URL:", url))
         .catch(console.error);
     img_tag.width  = 200;
     img_tag.height = 200;
+    post_div.appendChild(img_tag);
 }
 
 
