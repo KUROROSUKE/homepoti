@@ -208,6 +208,7 @@ async function toViewScreen() {
         post_div.style.width = "100%";
         post_div.style.height = "auto";
         post_div.style.border = "1px solid #000";
+        post_div.style.margin = "0 5px 0 5px";
 
         const img_tag = document.createElement("img");
         img_tag.alt = "base64 image";
