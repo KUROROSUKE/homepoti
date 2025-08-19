@@ -267,6 +267,8 @@ async function renderPost(postId, uid, position = 'top') {
     post_div.style.height = "auto";
     post_div.style.border = "1px solid #000";
     post_div.style.margin = "0 5px 0 5px";
+    post_div.style.padding = "10px";
+
 
     const img_tag = document.createElement("img");
     img_tag.alt = "base64 image";
@@ -277,21 +279,20 @@ async function renderPost(postId, uid, position = 'top') {
 
     await loadFromRTDB(postId, uid, img_tag, text_tag).catch(console.error);
 
-    img_tag.width  = 200;
-    img_tag.height = 200;
-
+    // ← JSでの width/height 指定は不要。CSSで制御。
     post_div.appendChild(text_tag);
     if (img_tag.src) post_div.appendChild(img_tag);
 
     const container = document.getElementById("viewScreen");
     if (position === 'top' && container.firstChild) {
-        container.insertBefore(post_div, container.firstChild); // 先頭へ
+        container.insertBefore(post_div, container.firstChild);
     } else {
-        container.appendChild(post_div); // 末尾へ
+        container.appendChild(post_div);
     }
 
     shownPostIds.add(postId);
 }
+
 
 /**
  * 初期ロード:

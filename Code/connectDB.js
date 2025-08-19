@@ -163,6 +163,7 @@ async function loadFromRTDB(postId, uid, img_tag, txt_tag) {
         // 3) URL 生成して <img> に表示
         url = URL.createObjectURL(blob);
         img_tag.src = url;
+        img_tag.style.border = "1px solid black";
     }
 
     const snap2 = await database.ref(`players/${uid}/posts/${postId}/text`).get();
