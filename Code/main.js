@@ -178,6 +178,8 @@ function toViewScreen() {
     loadImageFromRTDB(postId, uid, img_tag_id)
         .then(({url}) => console.log("表示URL:", url))
         .catch(console.error);
+    img_tag.width  = 200;
+    img_tag.height = 200;
 }
 
 
