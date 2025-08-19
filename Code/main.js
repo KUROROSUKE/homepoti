@@ -254,6 +254,64 @@ async function getRecentFollowerPostIds(followerUids) {
 
 
 /**
+ * コメント送信
+ *  - ownerUid: 投稿の所有者UID
+ *  - postId  : 対象投稿ID
+ */
+async function submitComment(ownerUid, postId, inputEl, buttonEl) {
+    const user = auth.currentUser;
+    if (!user) { alert("ログインしてください"); return; }
+
+    const text = (inputEl.value || "").trim();
+    if (!text) return;
+
+    buttonEl.disabled = true;
+    try {
+        const ref = database.ref(`players/${ownerUid}/posts/${postId}/comments`).push();
+        const payload = {
+            id: ref.key,
+            uid: user.uid,
+            name: window.currentUserName || "anonymous", // ★ connectDBでセット
+            text,
+            createdAt: Date.now(),
+        };
+        await ref.set(payload);
+        inputEl.value = "";
+    } catch (e) {
+        console.error(e);
+        alert("コメントの送信に失敗しました");
+    } finally {
+        buttonEl.disabled = false;
+    }
+}
+
+/**
+ * コメントのリアルタイム購読
+ */
+function attachCommentsStream(ownerUid, postId, listEl) {
+    const ref = database.ref(`players/${ownerUid}/posts/${postId}/comments`).limitToLast(50);
+    ref.on("child_added", (snap) => {
+        const v = snap.val() || {};
+        const item = document.createElement("div");
+        item.className = "comment-item";
+
+        const meta = document.createElement("div");
+        meta.className = "comment-meta";
+        meta.textContent = v.name ? v.name : "匿名";
+
+        const body = document.createElement("div");
+        body.className = "comment-body";
+        // textContent なのでXSS対策としてプレーンテキスト表示
+        body.textContent = v.text || "";
+
+        item.appendChild(meta);
+        item.appendChild(body);
+        listEl.appendChild(item);
+    });
+}
+
+
+/**
  * position:
  *  - 'top'    : 先頭へ挿入（新規投稿など）
  *  - 'bottom' : 末尾へ追加（過去ロード）
@@ -282,6 +340,37 @@ async function renderPost(postId, uid, position = 'top') {
     // ← JSでの width/height 指定は不要。CSSで制御。
     post_div.appendChild(text_tag);
     if (img_tag.src) post_div.appendChild(img_tag);
+
+    // ★ 追加: コメントUI
+    const commentsWrap = document.createElement("div");
+    commentsWrap.className = "comments";
+
+    const list = document.createElement("div");
+    list.className = "comment-list";
+    commentsWrap.appendChild(list);
+
+    const form = document.createElement("div");
+    form.className = "comment-form";
+
+    const input = document.createElement("input");
+    input.type = "text";
+    input.placeholder = "コメントを書く";
+    input.maxLength = 200;
+    input.className = "comment-input";
+
+    const sendBtn = document.createElement("button");
+    sendBtn.textContent = "送信";
+    sendBtn.className = "comment-send";
+    sendBtn.addEventListener("click", () => submitComment(uid, postId, input, sendBtn));
+
+    form.appendChild(input);
+    form.appendChild(sendBtn);
+    commentsWrap.appendChild(form);
+
+    post_div.appendChild(commentsWrap);
+
+    // コメントのストリーム購読開始
+    attachCommentsStream(uid, postId, list);
 
     const container = document.getElementById("viewScreen");
     if (position === 'top' && container.firstChild) {

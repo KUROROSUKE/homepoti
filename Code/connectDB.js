@@ -1,5 +1,5 @@
 // ============ authentication      ============
-// firebase Realtime DB config
+/* 既存そのまま */ 
 const firebaseConfig = {
     apiKey: "AIzaSyBE8CK6ODzy0OrgPogLrE4IK9938rUF3ko",
     authDomain: "homepoti-b61a7.firebaseapp.com",
@@ -38,6 +38,9 @@ auth.onAuthStateChanged(async (authUser) => {
         name = getRandomName();
         await playerRef.update({ Name: name, IsSearched: false });
     }
+
+    // ★ 追加: コメント投稿用に現在ユーザー名をグローバルへ保持
+    window.currentUserName = name || "anonymous";
 
     // 最初の画面反映
     //TODO: document.getElementById('UserNameTag').textContent = `名前： ${name}`;
@@ -169,6 +172,7 @@ async function loadFromRTDB(postId, uid, img_tag, txt_tag) {
     const snap2 = await database.ref(`players/${uid}/posts/${postId}/text`).get();
     txt_tag.innerHTML = snap2.val();
 }
+
 
 
 
