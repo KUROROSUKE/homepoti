@@ -172,6 +172,7 @@ function toViewScreen() {
     img_tag.alt = "base64 image";
     let img_tag_id = `post${n}_img`;
     img_tag.id = img_tag_id;
+    document.getElementById("viewScreen").appendChild(img_tag);
     const uid = document.getElementById("uidInput").value;
     const postId = document.getElementById("postIdInput").value;
     loadImageFromRTDB(postId, uid, img_tag_id)
