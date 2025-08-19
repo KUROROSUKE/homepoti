@@ -5,7 +5,7 @@ const firebaseConfig = {
     authDomain: "homepoti-b61a7.firebaseapp.com",
     databaseURL: "https://homepoti-b61a7-default-rtdb.firebaseio.com",
     projectId: "homepoti-b61a7",
-    storageBucket: "homepoti-b61a7.firebasestorage.app",
+    storageBucket: "homepoti-b61a7.appspot.com",
     messagingSenderId: "379862558289",
     appId: "1:379862558289:web:a8f40e857d5ade3f35ba70",
     measurementId: "G-W52MY9CN8L",
