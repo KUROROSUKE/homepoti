@@ -182,7 +182,7 @@ async function loadImageFromRTDB(postId, uid) {
 
   // 3) URL 生成して <img> に表示
   const url = URL.createObjectURL(blob);
-  document.getElementById("preview").src = url;
+  document.getElementById("post1").src = url; //TODO: 後でやる
 
   return { blob, url };
 }

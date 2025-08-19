@@ -165,13 +165,16 @@ async function post() {
 function toViewScreen() {
     // NoSQLサーバーから最近の投稿をとってくる
     // uid と postId は保存時のものを渡す
-    loadImageFromRTDB("POST_ID", "USER_UID")
+    loadImageFromRTDB("-OY-0e4cIfdRVkauer8D", "I5wUbCT8cXRdwjXjSTI4ORJzoWh1")
         .then(({url}) => console.log("表示URL:", url))
         .catch(console.error);
 }
 
+
+/*
 // PostScreen画面の表示
 function toPostScreen() {
     // NoSQLサーバーから自分の投稿をとってくる
-    // 思ったけど、Viewの方の絞り込み（検索）でよくね？
+    // 思ったけど、Viewの方の絞り込み（検索）だけでよくね？
 }
+*/
