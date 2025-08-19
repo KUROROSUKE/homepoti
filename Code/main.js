@@ -95,9 +95,8 @@ async function viewImageCanvas(maxLong=300) {
 // blob形式のデータを返す
 // canvasの削除を行う
 async function resizeImage(maxLong=640) {
-    //maxLongは 1600, 1280, 1024, 800, 640 から選ぶのが良き
-    file = document.getElementById("fileInput").files[0];
-    console.log(file);
+    const file = document.getElementById("fileInput").files[0];
+    if (!file) return null;
 
     const img = await new Promise((res, rej) => {
         const i = new Image();
@@ -115,12 +114,20 @@ async function resizeImage(maxLong=640) {
     const canvas = document.getElementById("canvas");
     const ctx = canvas.getContext("2d");
 
+    // ここで確実に目的サイズへ描画
+    canvas.width = nw;
+    canvas.height = nh;
+    ctx.drawImage(img, 0, 0, nw, nh);
+
     const blob = await new Promise((res) =>
-        canvas.toBlob(res, "image/jpeg", 0.9) // リサイズのみ（画質固定）
+        canvas.toBlob(res, "image/jpeg", 0.9)
     );
 
+    // 後片付け
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     canvas.width = 0; canvas.height = 0;
+    canvas.style.display = "none";
+
     return blob;
 }
 

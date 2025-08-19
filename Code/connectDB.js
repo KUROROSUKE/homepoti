@@ -109,15 +109,15 @@ async function upload(text_data, image_data) {
             text_data,
             image_data
         };
+        await postRef.set(payload);
     } else {
         const payload = {
             id: postRef.key,
             photoURL: user.photoURL || "",
             text_data
         };
+        await postRef.set(payload);
     }
-
-    await postRef.set(payload);
 }
 
 
