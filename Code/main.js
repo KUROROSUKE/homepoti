@@ -592,6 +592,7 @@ async function deleteService(svcId) {
 }
 
 // 購入処理
+// 購入処理
 async function buyService(sellerUid, service) {
     const buyer = auth.currentUser;
     if (!buyer) { alert("ログインしてください"); return; }
@@ -606,7 +607,7 @@ async function buyService(sellerUid, service) {
     if (!tx.committed) return; // 同時購入の片方を排除
     if (tx.snapshot.val() !== true) return;
 
-    // 2) コイン決済
+    // 2) コイン決済: 買い手は 表示価格 x を支払う（ここは従来通り）
     const ok = await spendCoins(buyer.uid, service.price);
     if (!ok) {
         // フラグ戻す
@@ -615,8 +616,10 @@ async function buyService(sellerUid, service) {
         return;
     }
 
-    // 3) 売り手に加算
-    await changeCoins(sellerUid, service.price);
+    // 3) 売り手に加算: x の半分だけ渡す（残り半分は消滅＝バーン）
+    //    端数は切り捨て（例: x=1 → 0 受取）。必要なら切上げ/四捨五入に変更可。
+    const half = Math.floor(service.price / 2);
+    await changeCoins(sellerUid, half);
 
     // 4) 注文レコードを作成（売り手側に通知）
     const orderRef = database.ref(`players/${sellerUid}/orders`).push();
@@ -634,6 +637,7 @@ async function buyService(sellerUid, service) {
 
     alert("購入しました");
 }
+
 
 // 画面要素
 const myServicesList = document.getElementById('myServicesList');
@@ -655,7 +659,8 @@ function renderMyServiceCard(svc) {
 
     const meta = document.createElement('div');
     meta.className = 'svc-meta';
-    meta.textContent = `価格: ${svc.price} 🪙 / 状態: ${svc.active ? '公開' : '停止'}`;
+    // ★ 修正: 半分だけ受け取れる説明を追記
+    meta.textContent = `価格: ${svc.price} 🪙（受取はその半分） / 状態: ${svc.active ? '公開' : '停止'}`;
 
     const actions = document.createElement('div');
     actions.className = 'svc-actions';
@@ -704,7 +709,8 @@ function renderMarketCard(sellerUid, sellerName, svc) {
 
     const meta = document.createElement('div');
     meta.className = 'svc-meta';
-    meta.textContent = `出品者: ${sellerName || 'unknown'} / 価格: ${svc.price} 🪙`;
+    // ★ 修正: 買い手は price 支払い、売り手は半分だけ受取
+    meta.textContent = `出品者: ${sellerName || 'unknown'} / 価格: ${svc.price} 🪙（売り手は半分を受取）`;
 
     const actions = document.createElement('div');
     actions.className = 'svc-actions';
