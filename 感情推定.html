@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="utf-8" />
-  <title>日本語→英語 翻訳経由 Toxicity 判定 (tfjs)</title>
+  <title>JA→EN 無料翻訳 → Toxicity 判定 (tfjs)</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <style>
     body { font-family: system-ui, sans-serif; margin: 20px; }
@@ -11,20 +11,23 @@
     .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; white-space:pre-wrap }
     .badge { display:inline-block; padding:2px 8px; border-radius:12px; background:#eee; }
     .muted { color:#666; font-size:12px; }
+    .err { color:#c00; white-space:pre-wrap }
   </style>
 </head>
 <body>
-  <h1>日本語→英語 翻訳経由 Toxicity 判定 (tfjs)</h1>
+  <h1>日本語→英語 無料翻訳 → Toxicity 判定 (ブラウザのみ)</h1>
 
   <label for="text">テキスト（日本語）</label>
   <textarea id="text" placeholder="例）お前なんて大嫌いだ。"></textarea>
-  <div class="muted">※ 入力停止から約300msで翻訳→英語モデルで判定（ブラウザ実行）。</div>
+  <div class="muted">※ 入力停止から約300msで LibreTranslate で英訳 → tfjs/toxicity で判定。</div>
 
   <div class="panel">
     <div>翻訳(EN): <span id="en" class="mono">-</span></div>
     <hr>
     <div>判定:</div>
     <pre id="out" class="mono">-</pre>
+    <hr>
+    <div class="err" id="err"></div>
   </div>
 
   <!-- 先に TFJS を読み込む -->
@@ -33,39 +36,68 @@
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/toxicity@1.2.2"></script>
 
   <script>
-    // デバウンス
-    const $ = (id) => document.getElementById(id);
-    const t = $('text'), en = $('en'), out = $('out');
-    let timer = null, modelPromise = null;
+    // -----------------------------
+    // 設定
+    // -----------------------------
+    // 無料の公開インスタンス。混雑やレート制限の可能性あり。
+    const LT_ENDPOINT = 'https://libretranslate.com/translate';
+    // 代替候補（必要に応じて差し替え）:
+    // const LT_ENDPOINT = 'https://translate.astian.org/translate';
 
-    // toxicity モデルを遅延ロード
+    // -----------------------------
+    // 要素取得
+    // -----------------------------
+    const $ = (id) => document.getElementById(id);
+    const t = $('text'), en = $('en'), out = $('out'), errBox = $('err');
+
+    // -----------------------------
+    // toxicity モデルの遅延ロード
+    // -----------------------------
+    let modelPromise = null;
     async function getModel() {
       if (!modelPromise) {
-        await tf.ready();                 // 必須: tf を先に初期化
+        await tf.ready();                  // tfjs 初期化
         modelPromise = toxicity.load(0.9); // 閾値0.9
       }
       return modelPromise;
     }
 
+    // -----------------------------
+    // デバウンス
+    // -----------------------------
+    let timer = null;
     t.addEventListener('input', () => {
       clearTimeout(timer);
       timer = setTimeout(run, 300);
     });
 
+    // -----------------------------
+    // 翻訳 → 判定 実行
+    // -----------------------------
     async function run() {
+      errBox.textContent = '';
       const ja = t.value.trim();
       if (!ja) { en.textContent = '-'; out.textContent = '-'; return; }
 
       try {
-        // 1) 日本語→英語 翻訳（鍵はサーバ側で保持。/translate は後述のエッジ関数）
-        const res = await fetch('/translate', {
+        // 1) LibreTranslate で JA→EN（APIキー不要）
+        const ctrl = new AbortController();
+        const to = setTimeout(() => ctrl.abort('timeout'), 10000); // 10秒タイムアウト
+        const res = await fetch(LT_ENDPOINT, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text: ja, source: 'ja', target: 'en' })
+          signal: ctrl.signal,
+          body: JSON.stringify({
+            q: ja,
+            source: 'ja',
+            target: 'en',
+            format: 'text'
+          })
         });
-        if (!res.ok) throw new Error('translate failed: HTTP ' + res.status);
+        clearTimeout(to);
+        if (!res.ok) throw new Error('LibreTranslate HTTP ' + res.status);
         const data = await res.json();
-        const eng = data.text || '';
+        const eng = data.translatedText || '';
         en.textContent = eng || '(空)';
 
         // 2) 英語 toxicity 判定
@@ -77,12 +109,19 @@
         const lines = [];
         predictions.forEach(pred => {
           const r = pred.results[i];
-          if (r?.match) lines.push(`${pred.label}: 有害と判定 (p≈${r?.probabilities?.[1]?.toFixed?.(3) ?? '?'})`);
+          if (r?.match) {
+            // 有害と判定されたカテゴリのみ出力
+            const p = r?.probabilities?.[1];
+            lines.push(`${pred.label}: 有害と判定` + (typeof p === 'number' ? ` (p≈${p.toFixed(3)})` : ''));
+          }
         });
         out.textContent = lines.length ? lines.join('\n') : 'どのカテゴリも閾値未満';
       } catch (e) {
-        out.textContent = String(e);
         console.error(e);
+        errBox.textContent =
+          'エラー: ' + e + '\n' +
+          '対処: 公開インスタンスの混雑/ブロックの可能性。時間を置くか、別エンドポイントに切替。';
+        out.textContent = '-';
       }
     }
 
