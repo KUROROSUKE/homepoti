@@ -216,9 +216,8 @@ async function getRecentFollowerPostIds(followerUids) {
 }
 
 
-
 async function renderPost(postId, uid) {
-    let n = shownPostIds.length;
+    let n = shownPostIds.size;
 
     const post_div = document.createElement("div");
     post_div.id = `post_${n}`;
@@ -241,17 +240,22 @@ async function renderPost(postId, uid) {
 
     post_div.appendChild(text_tag);
     if (img_tag.src) post_div.appendChild(img_tag);
-    document.getElementById("viewScreen").appendChild(post_div);
+
+    const container = document.getElementById("viewScreen");
+    if (container.firstChild) {
+        container.insertBefore(post_div, container.firstChild); // 常に先頭へ
+    } else {
+        container.appendChild(post_div);
+    }
 
     shownPostIds.add(postId);
 }
 
 async function toViewScreen() {
-    // NoSQLサーバーから最近の投稿をとってくる
-    // uid と postId は保存時のものを渡す
     const posts = await getRecentFollowerPostIds(Follow_uid_list);
 
-    for (let i = 0; i < posts.length; i++) {
+    // 配列を逆順ループして、常に先頭に追加
+    for (let i = posts.length - 1; i >= 0; i--) {
         const { postId, uid } = posts[i];
         renderPost(postId, uid);
     }
