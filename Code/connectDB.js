@@ -93,9 +93,14 @@ auth.onAuthStateChanged(async (authUser) => {
 
     // 既存フロー
     if (window.initServicesAndMarket) window.initServicesAndMarket();
+
+    // 全体から取得して描画（toViewScreen は全体収集版に差し替え済み）
     await toViewScreen();
-    Follow_uid_list.forEach(uid => attachPostStreamForUid(uid));
+
+    // ★ 置換：固定配列購読を廃止し、全体 .on 監視を開始
+    if (window.attachGlobalPostsOn) window.attachGlobalPostsOn();
 });
+
 
 
 // Google login
