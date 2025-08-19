@@ -158,7 +158,7 @@ async function upload(text_data, image_data) {
 
 
 // Base64 → Blob
-function base64ToBlob(base64, img_tag_id, mime = "image/jpeg") {
+function base64ToBlob(base64, mime = "image/jpeg") {
   const bin = atob(base64);
   const len = bin.length;
   const u8 = new Uint8Array(len);
@@ -178,7 +178,7 @@ async function loadImageFromRTDB(postId, uid, img_tag_id) {
   const base64 = image.chunks.join("");
 
   // 2) Blob に変換（JPEG 固定）
-  const blob = base64ToBlob(base64, img_tag_id);
+  const blob = base64ToBlob(base64);
 
   // 3) URL 生成して <img> に表示
   const url = URL.createObjectURL(blob);

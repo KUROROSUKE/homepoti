@@ -165,11 +165,15 @@ async function post() {
 function toViewScreen() {
     // NoSQLサーバーから最近の投稿をとってくる
     // uid と postId は保存時のものを渡す
+    //loadImageFromRTDBの、すべての引数を自動で決定してほしい。いったん対象をすべてに広げて。
+
     let n = 1;
     const img_tag = document.createElement("img");
     let img_tag_id = `post${n}_img`;
     img_tag.id = img_tag_id;
-    loadImageFromRTDB("-OY-0e4cIfdRVkauer8D", "I5wUbCT8cXRdwjXjSTI4ORJzoWh1", img_tag_id)
+    const uid = document.getElementById("uidInput").value;
+    const postId = document.getElementById("postIdInput").value;
+    loadImageFromRTDB(postId, uid, img_tag_id)
         .then(({url}) => console.log("表示URL:", url))
         .catch(console.error);
 }
