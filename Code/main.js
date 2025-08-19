@@ -175,7 +175,7 @@ function attachPostStreamForUid(uid) {
     const query = database
         .ref(`players/${uid}/posts`)
         .orderByChild('createdAt')
-        .limitToLast(10);
+        .limitToLast(1);
 
     const handler = (snap) => {
         const postId = snap.key;
