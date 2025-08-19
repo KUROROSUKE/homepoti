@@ -179,17 +179,16 @@ async function toViewScreen() {
     const text_tag = document.createElement("p");
     let txt_tag_id = `txt_${n}`;
     text_tag.id = txt_tag_id
-    const snap = await database.ref(`players/${uid}/posts/${postId}/text`).get();
-    text_tag.innerHTML = snap.val();
-    post_div.appendChild(text_tag);
 
     const uid = document.getElementById("uidInput").value;
     const postId = document.getElementById("postIdInput").value;
-    loadFromRTDB(postId, uid, img_tag_id)
+    loadFromRTDB(postId, uid, img_tag_id, txt_tag_id)
         .then(({url}) => console.log("表示URL:", url))
         .catch(console.error);
     img_tag.width  = 200;
     img_tag.height = 200;
+    
+    post_div.appendChild(text_tag);
     post_div.appendChild(img_tag);
 }
 

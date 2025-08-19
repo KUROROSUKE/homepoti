@@ -167,11 +167,11 @@ function base64ToBlob(base64, mime = "image/jpeg") {
 }
 
 // Realtime Database から復元
-async function loadImageFromRTDB(postId, uid, img_tag_id) {
-    const snap = await database.ref(`players/${uid}/posts/${postId}/image`).get();
+async function loadImageFromRTDB(postId, uid, img_tag_id, txt_tag_id) {
+    const snap1 = await database.ref(`players/${uid}/posts/${postId}/image`).get();
     if (!snap.exists()) throw new Error("image not found");
 
-    const image = snap.val();
+    const image = snap1.val();
     if (!image.chunks) throw new Error("chunks missing");
 
     // 1) チャンク結合
@@ -183,6 +183,9 @@ async function loadImageFromRTDB(postId, uid, img_tag_id) {
     // 3) URL 生成して <img> に表示
     const url = URL.createObjectURL(blob);
     document.getElementById(img_tag_id).src = url; //TODO: 後でやる
+
+    const snap2 = await database.ref(`players/${uid}/posts/${postId}/text`).get();
+    document.getElementById(txt_tag_id).innerHTML = snap2.val();
 
     return { blob, url };
 }
