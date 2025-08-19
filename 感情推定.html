@@ -11,6 +11,7 @@
     .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
     .badge { display:inline-block; padding:2px 8px; border-radius:12px; background:#eee; }
     .muted { color:#666; font-size:12px; }
+    .err { color:#c00; white-space:pre-wrap }
   </style>
 </head>
 <body>
@@ -26,19 +27,18 @@
     <hr>
     <div>生結果:</div>
     <pre id="raw" class="mono" style="white-space:pre-wrap">-</pre>
+    <hr>
+    <div class="err" id="err"></div>
   </div>
 
   <script type="module">
     // ------------------------------------------------------------
     // ブラウザのみで日本語感情分析（ゼロショット分類）
     // アプローチ:
-    //   ・多言語NLIモデル (MNLI/XNLI) を使い、候補ラベル「ポジティブ/ネガティブ/中立」を
+    //   ・多言語NLIモデル (XNLI) を使い、候補ラベル「ポジティブ/ネガティブ/中立」を
     //     仮説文「このテキストは{}である。」で判定する
-    //   ・モデル: MoritzLaurer/mDeBERTa-v3-base-mnli-xnli（公開・tokenizer.jsonあり）
+    //   ・モデル: joeddav/xlm-roberta-large-xnli（公開・tokenizer.jsonあり）
     //   ・Transformers.js が WebGPU/WASM で動作（自動フォールバック）
-    // 注意:
-    //   ・ゼロショットゆえ厳密な感情特化モデルより精度は劣る可能性あり
-    //   ・完全クライアントサイドの要件を満たす
     // ------------------------------------------------------------
 
     import { pipeline } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.2';
@@ -48,6 +48,7 @@
       label: document.getElementById('label'),
       score: document.getElementById('score'),
       raw: document.getElementById('raw'),
+      err: document.getElementById('err'),
     };
 
     // 日本語の候補ラベル
@@ -57,8 +58,8 @@
 
     async function getZeroShot() {
       if (!zscPromise) {
-        // ★ 公開モデル。ブラウザから匿名で tokenizer.json 等を取得可能
-        zscPromise = pipeline('zero-shot-classification', 'MoritzLaurer/mDeBERTa-v3-base-mnli-xnli', {
+        // ★ 公開モデル。匿名で tokenizer.json 等を取得可能
+        zscPromise = pipeline('zero-shot-classification', 'joeddav/xlm-roberta-large-xnli', {
           // quantized: true, // 対応時に軽量化（任意）
         });
       }
@@ -73,6 +74,7 @@
     });
 
     async function run() {
+      ui.err.textContent = '';
       const text = ui.t.value.trim();
       if (!text) {
         ui.label.textContent = '-';
@@ -83,32 +85,44 @@
       try {
         const zsc = await getZeroShot();
 
-        // 仮説テンプレートは日本語にする（モデルは多言語NLI）
-        const out = await zsc(text, {
-          candidate_labels: CANDIDATES,
-          hypothesis_template: 'このテキストは{}である。'
+        // ★ 修正点:
+        //   第2引数: ラベル配列
+        //   第3引数: オプション（仮説テンプレートなど）
+        const out = await zsc(text, CANDIDATES, {
+          hypothesis_template: 'このテキストは{}である。',
+          multi_label: false
         });
 
-        // 戻り値例:
-        // {
-        //   sequence: "...",
-        //   labels: ["ポジティブ","中立","ネガティブ"],
-        //   scores: [0.73, 0.18, 0.09]
-        // }
-        const topLabel = out.labels?.[0] ?? '?';
-        const topScore = out.scores?.[0] ?? null;
+        // out は通常: { sequence, labels: [...], scores: [...] }
+        let topLabel = '?';
+        let topScore = null;
+
+        if (Array.isArray(out?.labels) && Array.isArray(out?.scores)) {
+          topLabel = out.labels[0];
+          topScore = out.scores[0];
+        } else if (Array.isArray(out)) {
+          // 一部バージョンで配列形式（[{label, score}, ...]）が返る可能性に対処
+          topLabel = out[0]?.label ?? '?';
+          topScore = out[0]?.score ?? null;
+        }
 
         ui.label.textContent = topLabel;
         ui.score.textContent = topScore != null ? topScore.toFixed(4) : '?';
         ui.raw.textContent = JSON.stringify(out, null, 2);
       } catch (e) {
         console.error(e);
+        ui.err.textContent =
+          'モデル取得に失敗しました。対処:\n' +
+          '1) file:// ではなく http://localhost で開く\n' +
+          '2) 広告ブロッカー等を一時無効化\n' +
+          '3) 企業プロキシで huggingface.co を許可\n' +
+          '4) それでも不可ならモデルを自前ホスト';
         ui.raw.textContent = String(e);
       }
     }
 
     // デモ用初期値
-    ui.t.value = '今日は最高の気分だ。でも少し不安もある。';
+    ui.t.value = '今日は最高の気分だ。';
     run();
   </script>
 </body>
