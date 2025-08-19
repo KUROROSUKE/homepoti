@@ -16,6 +16,11 @@
   <script src="connectDB.js"></script>
 </head>
 <body>
+    <!-- ★ 追加: コインHUD（ログイン時に表示） -->
+    <div id="coinHUD" aria-label="coin HUD" style="display:none;">
+      🪙 <span id="coinBalance">0</span>
+    </div>
+
     <!-- ログインしてなかったら表示 -->
     <div style="text-align: center;" id="notSigned">
         <h3>ログインしてください</h3>

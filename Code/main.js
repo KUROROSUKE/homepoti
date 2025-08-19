@@ -311,6 +311,40 @@ function attachCommentsStream(ownerUid, postId, listEl) {
 }
 
 
+// === 追加: コイン付与に関する定義 ===
+const COIN_FOR_GIVER = 1;     // 褒めた人
+const COIN_FOR_RECEIVER = 1;  // 褒められた人
+
+async function awardCoinsForPraise(ownerUid, likerUid) {
+    // 取り消し時は別関数で減算
+    await Promise.all([
+        database.ref(`players/${ownerUid}/coins`).transaction((cur) => {
+            const v = typeof cur === "number" ? cur : 0;
+            return v + COIN_FOR_RECEIVER;
+        }),
+        database.ref(`players/${likerUid}/coins`).transaction((cur) => {
+            const v = typeof cur === "number" ? cur : 0;
+            return v + COIN_FOR_GIVER;
+        }),
+    ]);
+}
+
+async function revertCoinsForPraise(ownerUid, likerUid) {
+    await Promise.all([
+        database.ref(`players/${ownerUid}/coins`).transaction((cur) => {
+            const v = typeof cur === "number" ? cur : 0;
+            const nv = v - COIN_FOR_RECEIVER;
+            return nv < 0 ? 0 : nv;
+        }),
+        database.ref(`players/${likerUid}/coins`).transaction((cur) => {
+            const v = typeof cur === "number" ? cur : 0;
+            const nv = v - COIN_FOR_GIVER;
+            return nv < 0 ? 0 : nv;
+        }),
+    ]);
+}
+
+
 /**
  * position:
  *  - 'top'    : 先頭へ挿入（新規投稿など）
@@ -354,16 +388,29 @@ async function renderPost(postId, uid, position = 'top') {
         }
     });
 
-    // トグル挙動
+    // トグル挙動（transactionで二重加算を抑止）
     praiseBtn.addEventListener("click", async () => {
         const cu = auth.currentUser;
         if (!cu) { alert("ログインしてください"); return; }
         const myRef = praisesRef.child(cu.uid);
-        const cur = await myRef.get();
-        if (cur.exists()) {
-            await myRef.remove();   // 取り消し
-        } else {
-            await myRef.set(true);  // 褒める
+
+        try {
+            const result = await myRef.transaction((curr) => {
+                // 既に褒めているなら取り消し(null)、そうでなければ褒める(true)
+                return curr ? null : true;
+            });
+            if (!result.committed) return;
+
+            // 反映後の値を見て、付与か減算かを判断
+            const afterVal = result.snapshot.val();
+            if (afterVal === true) {
+                await awardCoinsForPraise(uid, cu.uid);
+            } else {
+                await revertCoinsForPraise(uid, cu.uid);
+            }
+        } catch (e) {
+            console.error(e);
+            alert("操作に失敗しました");
         }
     });
 

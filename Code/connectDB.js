@@ -20,6 +20,34 @@ function getRandomName() {
     return rand;
 }
 
+// === 追加: コイン操作の基本関数 ===
+/**
+ * coins を ±delta する。負の値も可。0未満にはしない。
+ */
+async function changeCoins(uid, delta) {
+    const ref = database.ref(`players/${uid}/coins`);
+    await ref.transaction((cur) => {
+        const v = typeof cur === "number" ? cur : 0;
+        const nv = v + delta;
+        return nv < 0 ? 0 : nv;
+    });
+}
+
+/**
+ * 将来用: コインを消費するAPI（足りなければfalse）
+ */
+async function spendCoins(uid, amount) {
+    if (amount <= 0) return true;
+    let ok = false;
+    const ref = database.ref(`players/${uid}/coins`);
+    await ref.transaction((cur) => {
+        const v = typeof cur === "number" ? cur : 0;
+        if (v < amount) return v; // 変更なし
+        ok = true;
+        return v - amount;
+    });
+    return ok;
+}
 
 auth.onAuthStateChanged(async (authUser) => {
     if (!authUser) return;
@@ -32,21 +60,41 @@ auth.onAuthStateChanged(async (authUser) => {
     if (!snapshot.exists()) {
         name = getRandomName();
         await playerRef.set({
-            Name       : name,
+            Name  : name,
+            coins : 0, // ★ 初期コイン
         });
-    } else if (!name) { // 名前だけがないなら
-        name = getRandomName();
-        await playerRef.update({ Name: name, IsSearched: false });
+    } else {
+        // 名前だけがないなら
+        if (!name) {
+            name = getRandomName();
+            await playerRef.update({ Name: name, IsSearched: false });
+        }
+        // ★ coins フィールドが無ければ作成
+        if (!snapshot.child('coins').exists()) {
+            await playerRef.update({ coins: 0 });
+        }
     }
 
     // ★ 追加: コメント投稿用に現在ユーザー名をグローバルへ保持
     window.currentUserName = name || "anonymous";
+    // ★ 追加: UID も保持（コインAPI等で使用）
+    window.currentUserUid = authUser.uid;
 
     // 最初の画面反映
     //TODO: document.getElementById('UserNameTag').textContent = `名前： ${name}`;
     document.getElementById('viewScreen').style.display = 'block';
     document.getElementById("bottomNav") .style.display = "flex";
     document.getElementById('notSigned' ).style.display = 'none';
+
+    // ★ 追加: コインHUD表示と購読
+    const hud = document.getElementById('coinHUD');
+    const bal = document.getElementById('coinBalance');
+    if (hud && bal) {
+        hud.style.display = 'block';
+        database.ref(`players/${authUser.uid}/coins`).on('value', (s) => {
+            bal.textContent = typeof s.val() === 'number' ? s.val() : 0;
+        });
+    }
 
     // ★ 修正点: 初期ロードを待ってからストリーム監視を開始する
     await toViewScreen();
@@ -76,6 +124,8 @@ function logout() {
     document.getElementById("bottomNav") .style.display = "none";
     document.getElementById("postScreen").style.display = "none";
     document.getElementById("notSigned" ).style.display = "block";
+    const hud = document.getElementById('coinHUD');
+    if (hud) hud.style.display = 'none'; // ★ コインHUDを隠す
 }
 
 
