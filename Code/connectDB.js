@@ -14,11 +14,14 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const database = firebase.database();
 const auth = firebase.auth();
+
 function getRandomName() {
     const animals = ["cat", "dog", "bird", "bear", "monkey", "fox", "deer", "penguin"];
     const rand = animals[Math.floor(Math.random() * animals.length)] + Math.floor(Math.random() * 1000);
     return rand;
 }
+
+
 auth.onAuthStateChanged(async (authUser) => {
     if (!authUser) return;
 
@@ -53,7 +56,6 @@ auth.onAuthStateChanged(async (authUser) => {
             const playersArray = Object.entries(data).map(([userId, playerData]) => ({
                 userId,
                 name: playerData.Name || "名無し",
-                rate: playerData.Rate || 0
             }));
 
         } else {
@@ -63,6 +65,7 @@ auth.onAuthStateChanged(async (authUser) => {
         console.error("データ取得エラー:", error);
     });
 });
+
 
 // Google login
 function loginWithGoogle() {
@@ -80,7 +83,7 @@ function loginWithGoogle() {
         alert("Googleログインに失敗しました");
     });
 }
-
+// logout
 function logout() {
     auth.signOut();
     document.getElementById("viewScreen").style.display = "none";
@@ -91,7 +94,27 @@ function logout() {
 
 
 
+async function upload(text_data, image_data) {
+    const user = auth.currentUser;
+    if (!user) { alert("ログインしてください"); return; }
 
+    // 投稿オブジェクト作成（画像なしなら image_data を省略）
+    const postRef = db.ref("posts").push();
+    const now = firebase.database.ServerValue.TIMESTAMP;
+
+    const payload = {
+        id: postRef.key,
+        uid: user.uid,
+        name: user.displayName || "",
+        photoURL: user.photoURL || "",
+        text_data,
+        createdAt: now,
+        updatedAt: now,
+        ...(image_data ? { image_data: image_data } : {})  // ← 無いときはキー自体を作らない
+    };
+
+    await postRef.set(payload);
+}
 
 
 
