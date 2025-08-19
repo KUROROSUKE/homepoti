@@ -1,4 +1,3 @@
-
 // ============ authentication      ============
 // firebase Realtime DB config
 const firebaseConfig = {
@@ -45,7 +44,9 @@ auth.onAuthStateChanged(async (authUser) => {
     document.getElementById('viewScreen').style.display = 'block';
     document.getElementById("bottomNav") .style.display = "flex";
     document.getElementById('notSigned' ).style.display = 'none';
-    toViewScreen();
+
+    // ★ 修正点: 初期ロードを待ってからストリーム監視を開始する
+    await toViewScreen();
 
     Follow_uid_list.forEach(uid => attachPostStreamForUid(uid));
 });
@@ -182,7 +183,6 @@ async function loadFromRTDB(postId, uid, img_tag, txt_tag) {
 
 
 
-
 // ================================== ここら辺は後回し！すぐできるじゃろ！ ===================================
 // Sign up with email & password
 function SignUpWithMail() {
@@ -230,4 +230,3 @@ function loginWithMail() {
         alert("ログインに失敗しました: " + error.message);
     });
 }
-
