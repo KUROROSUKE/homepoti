@@ -201,8 +201,8 @@ async function toViewScreen() {
     // NoSQLサーバーから最近の投稿をとってくる
     // uid と postId は保存時のものを渡す
     //loadImageFromRTDBの、すべての引数を自動で決定してほしい。いったん対象をすべてに広げて。
-
-    (await getRecentFollowerPostIds(Follow_uid_list)).forEach((postId, n) => {
+    const postIds = await getRecentFollowerPostIds(Follow_uid_list);
+    for (let [n, postId] of postIds.entries()) {
         const post_div = document.createElement("div");
         post_div.id = `post_${n}`;
         post_div.style.width = "100%";
@@ -211,22 +211,22 @@ async function toViewScreen() {
 
         const img_tag = document.createElement("img");
         img_tag.alt = "base64 image";
-        let img_tag_id = `img_${n}`;
-        img_tag.id = img_tag_id;
+        img_tag.id  = `img_${n}`;
 
         const text_tag = document.createElement("p");
-        let txt_tag_id = `txt_${n}`;
-        text_tag.id = txt_tag_id
+        text_tag.id = `txt_${n}`;
 
-        loadFromRTDB(postId, Follow_uid_list[0], img_tag, txt_tag_id).catch(console.error);
+        await loadFromRTDB(postId, Follow_uid_list[0], img_tag, text_tag).catch(console.error);
+
         img_tag.width  = 200;
         img_tag.height = 200;
 
         post_div.appendChild(text_tag);
-        if (img_tag.src !== "") post_div.appendChild(img_tag);
+        if (img_tag.src) post_div.appendChild(img_tag);
         document.getElementById("viewScreen").appendChild(post_div);
-    })
+    }
 }
+
 
 
 // コインと価値の実装
