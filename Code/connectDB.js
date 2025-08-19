@@ -45,6 +45,7 @@ auth.onAuthStateChanged(async (authUser) => {
     document.getElementById('viewScreen').style.display = 'block';
     document.getElementById("bottomNav") .style.display = "flex";
     document.getElementById('notSigned' ).style.display = 'none';
+    toViewScreen();
 
     // 全体のリアルタイム更新監視
     const playersRef = database.ref('players/');
@@ -74,9 +75,7 @@ function loginWithGoogle() {
     .then((result) => {
         const user = result.user;
         console.log("Google login success:", user);
-        document.getElementById("LoginModal").style.display = "none";
-        document.getElementById("UserDataModal").style.display = "block";
-        startPeer(); // or any function you want to call after login
+        // あとはauth.onAuth~~に任せる。
     })
     .catch((error) => {
         console.error("Google login failed: ", error);

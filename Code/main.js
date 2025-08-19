@@ -163,13 +163,46 @@ async function post() {
 
 
 
+
+
+
+
+
 const Follow_uid_list = ["I5wUbCT8cXRdwjXjSTI4ORJzoWh1"]
+
+
+async function getRecentFollowerPostIds(followerUids) {
+    if (!followerUids || followerUids.length === 0) return [];
+
+    const collected = [];
+
+    await Promise.all(followerUids.map(async (uid) => {
+        const snap = await database.ref(`players/${uid}/posts`).get();
+        if (!snap.exists()) return;
+
+        snap.forEach(child => {
+            const val = child.val() || {};
+            if (val.text && val.text.trim().length > 0) {
+                collected.push({
+                    postId: child.key,
+                    createdAt: typeof val.createdAt === "number" ? val.createdAt : 0
+                });
+            }
+        });
+    }));
+
+    // 全体をcreatedAt降順に並べて10件だけpostIdを返す
+    collected.sort((a, b) => b.createdAt - a.createdAt);
+    return collected.slice(0, 10).map(item => item.postId);
+}
+
+
 async function toViewScreen() {
     // NoSQLサーバーから最近の投稿をとってくる
     // uid と postId は保存時のものを渡す
     //loadImageFromRTDBの、すべての引数を自動で決定してほしい。いったん対象をすべてに広げて。
 
-    for (let n=1;n<10;n++ ) {
+    (await getRecentFollowerPostIds(Follow_uid_list)).forEach((postId, n) => {
         const post_div = document.createElement("div");
         post_div.id = `post_${n}`;
         post_div.style.width = "100%";
@@ -185,17 +218,14 @@ async function toViewScreen() {
         let txt_tag_id = `txt_${n}`;
         text_tag.id = txt_tag_id
 
-        const postId = document.getElementById("postIdInput").value;
-        loadFromRTDB(postId, Follow_uid_list[0], img_tag_id, txt_tag_id)
-            .then(({url}) => console.log("表示URL:", url))
-            .catch(console.error);
+        loadFromRTDB(postId, Follow_uid_list[0], img_tag_id, txt_tag_id).catch(console.error);
         img_tag.width  = 200;
         img_tag.height = 200;
 
         post_div.appendChild(text_tag);
         post_div.appendChild(img_tag);
         document.getElementById("viewScreen").appendChild(post_div);
-    }
+    })
 }
 
 
