@@ -165,7 +165,7 @@ async function post() {
 
 
 
-const Follow_uid_list = ["I5wUbCT8cXRdwjXjSTI4ORJzoWh1"]
+const Follow_uid_list = ["I5wUbCT8cXRdwjXjSTI4ORJzoWh1", "ykeRda4HA6e6Byhn1nqad8Tpwv92"]
 const shownPostIds = new Set();
 
 // ===== ページネーション用の状態 =====
