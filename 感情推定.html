@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="utf-8" />
-  <title>日本語リアルタイム感情分析（ブラウザのみ・ゼロショット）</title>
+  <title>日本語リアルタイム感情分析（ブラウザのみ・ゼロショット 自前ホスティング）</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <style>
     body { font-family: system-ui, sans-serif; margin: 20px; }
@@ -15,11 +15,11 @@
   </style>
 </head>
 <body>
-  <h1>日本語リアルタイム感情分析（Transformers.js ゼロショット）</h1>
+  <h1>日本語リアルタイム感情分析（Transformers.js ゼロショット・自前ホスト）</h1>
 
   <label for="text">テキスト</label>
   <textarea id="text" placeholder="例）今日は最高の気分だ。でも少し不安もある。"></textarea>
-  <div class="muted">※ 入力停止から約300msでローカル推論。初回のみモデルをダウンロード。</div>
+  <div class="muted">※ 入力停止から約300msでローカル推論。初回のみ <code>/models/mnli/</code> からモデルを取得。</div>
 
   <div class="panel">
     <div>判定: <span id="label" class="badge">-</span></div>
@@ -34,14 +34,16 @@
   <script type="module">
     // ------------------------------------------------------------
     // ブラウザのみで日本語感情分析（ゼロショット分類）
-    // アプローチ:
-    //   ・多言語NLIモデル (XNLI) を使い、候補ラベル「ポジティブ/ネガティブ/中立」を
-    //     仮説文「このテキストは{}である。」で判定する
-    //   ・モデル: joeddav/xlm-roberta-large-xnli（公開・tokenizer.jsonあり）
-    //   ・Transformers.js が WebGPU/WASM で動作（自動フォールバック）
+    // 多言語NLIモデルを「同一オリジン上の /models/mnli/」から読み込む
+    //   ・/models/mnli/ に tokenizer.json, model.safetensors, config.json 等を配置済みとする
+    //   ・Hugging Face 直読みはしない（Unauthorized / tokenizer.json 不在回避）
     // ------------------------------------------------------------
 
-    import { pipeline } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.2';
+    import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.2';
+
+    // ★ あなたの公開場所に合わせる。リポジトリ直下なら '/models'
+    //   例: https://<user>.github.io/<repo>/models/…
+    env.localModelPath = '/models';
 
     const ui = {
       t: document.getElementById('text'),
@@ -51,16 +53,17 @@
       err: document.getElementById('err'),
     };
 
-    // 日本語の候補ラベル
+    // 日本語の候補ラベル（ゼロショット）
     const CANDIDATES = ['ポジティブ', 'ネガティブ', '中立'];
 
     let zscPromise = null;
 
     async function getZeroShot() {
       if (!zscPromise) {
-        // ★ 公開モデル。匿名で tokenizer.json 等を取得可能
-        zscPromise = pipeline('zero-shot-classification', 'joeddav/xlm-roberta-large-xnli', {
-          // quantized: true, // 対応時に軽量化（任意）
+        // ★ 'mnli' は env.localModelPath 配下のサブフォルダ名
+        //   -> /models/mnli/{tokenizer.json, model.safetensors, config.json, …}
+        zscPromise = pipeline('zero-shot-classification', 'mnli', {
+          // quantized: true, // 量子化モデルを置いた場合のみ有効
         });
       }
       return zscPromise;
@@ -85,9 +88,7 @@
       try {
         const zsc = await getZeroShot();
 
-        // ★ 修正点:
-        //   第2引数: ラベル配列
-        //   第3引数: オプション（仮説テンプレートなど）
+        // 第2引数: ラベル配列 / 第3引数: オプション
         const out = await zsc(text, CANDIDATES, {
           hypothesis_template: 'このテキストは{}である。',
           multi_label: false
@@ -101,7 +102,7 @@
           topLabel = out.labels[0];
           topScore = out.scores[0];
         } else if (Array.isArray(out)) {
-          // 一部バージョンで配列形式（[{label, score}, ...]）が返る可能性に対処
+          // 一部実装で配列形式に備える
           topLabel = out[0]?.label ?? '?';
           topScore = out[0]?.score ?? null;
         }
@@ -112,11 +113,11 @@
       } catch (e) {
         console.error(e);
         ui.err.textContent =
-          'モデル取得に失敗しました。対処:\n' +
-          '1) file:// ではなく http://localhost で開く\n' +
-          '2) 広告ブロッカー等を一時無効化\n' +
-          '3) 企業プロキシで huggingface.co を許可\n' +
-          '4) それでも不可ならモデルを自前ホスト';
+          'モデル取得に失敗: ' + e + '\n' +
+          '確認:\n' +
+          '・/models/mnli/ に tokenizer.json, modelファイル, config.json があるか\n' +
+          '・パスの大文字小文字が一致しているか\n' +
+          '・GitHub Pages の 404/403 になっていないか（権限やブランチ設定）';
         ui.raw.textContent = String(e);
       }
     }
