@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <title>日本語リアルタイム感情分析（ブラウザのみ・ゼロショット）</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 20px; }
+    textarea { width: 100%; height: 140px; font-size: 16px; }
+    .panel { border: 1px solid #ddd; border-radius: 8px; padding: 12px; margin-top: 12px; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .badge { display:inline-block; padding:2px 8px; border-radius:12px; background:#eee; }
+    .muted { color:#666; font-size:12px; }
+  </style>
+</head>
+<body>
+  <h1>日本語リアルタイム感情分析（Transformers.js ゼロショット）</h1>
+
+  <label for="text">テキスト</label>
+  <textarea id="text" placeholder="例）今日は最高の気分だ。でも少し不安もある。"></textarea>
+  <div class="muted">※ 入力停止から約300msでローカル推論。初回のみモデルをダウンロード。</div>
+
+  <div class="panel">
+    <div>判定: <span id="label" class="badge">-</span></div>
+    <div>score: <span id="score" class="mono">-</span></div>
+    <hr>
+    <div>生結果:</div>
+    <pre id="raw" class="mono" style="white-space:pre-wrap">-</pre>
+  </div>
+
+  <script type="module">
+    // ------------------------------------------------------------
+    // ブラウザのみで日本語感情分析（ゼロショット分類）
+    // アプローチ:
+    //   ・多言語NLIモデル (MNLI/XNLI) を使い、候補ラベル「ポジティブ/ネガティブ/中立」を
+    //     仮説文「このテキストは{}である。」で判定する
+    //   ・モデル: MoritzLaurer/mDeBERTa-v3-base-mnli-xnli（公開・tokenizer.jsonあり）
+    //   ・Transformers.js が WebGPU/WASM で動作（自動フォールバック）
+    // 注意:
+    //   ・ゼロショットゆえ厳密な感情特化モデルより精度は劣る可能性あり
+    //   ・完全クライアントサイドの要件を満たす
+    // ------------------------------------------------------------
+
+    import { pipeline } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.2';
+
+    const ui = {
+      t: document.getElementById('text'),
+      label: document.getElementById('label'),
+      score: document.getElementById('score'),
+      raw: document.getElementById('raw'),
+    };
+
+    // 日本語の候補ラベル
+    const CANDIDATES = ['ポジティブ', 'ネガティブ', '中立'];
+
+    let zscPromise = null;
+
+    async function getZeroShot() {
+      if (!zscPromise) {
+        // ★ 公開モデル。ブラウザから匿名で tokenizer.json 等を取得可能
+        zscPromise = pipeline('zero-shot-classification', 'MoritzLaurer/mDeBERTa-v3-base-mnli-xnli', {
+          // quantized: true, // 対応時に軽量化（任意）
+        });
+      }
+      return zscPromise;
+    }
+
+    // デバウンスでリアルタイム解析
+    let timer = null;
+    ui.t.addEventListener('input', () => {
+      clearTimeout(timer);
+      timer = setTimeout(run, 300);
+    });
+
+    async function run() {
+      const text = ui.t.value.trim();
+      if (!text) {
+        ui.label.textContent = '-';
+        ui.score.textContent = '-';
+        ui.raw.textContent = '-';
+        return;
+      }
+      try {
+        const zsc = await getZeroShot();
+
+        // 仮説テンプレートは日本語にする（モデルは多言語NLI）
+        const out = await zsc(text, {
+          candidate_labels: CANDIDATES,
+          hypothesis_template: 'このテキストは{}である。'
+        });
+
+        // 戻り値例:
+        // {
+        //   sequence: "...",
+        //   labels: ["ポジティブ","中立","ネガティブ"],
+        //   scores: [0.73, 0.18, 0.09]
+        // }
+        const topLabel = out.labels?.[0] ?? '?';
+        const topScore = out.scores?.[0] ?? null;
+
+        ui.label.textContent = topLabel;
+        ui.score.textContent = topScore != null ? topScore.toFixed(4) : '?';
+        ui.raw.textContent = JSON.stringify(out, null, 2);
+      } catch (e) {
+        console.error(e);
+        ui.raw.textContent = String(e);
+      }
+    }
+
+    // デモ用初期値
+    ui.t.value = '今日は最高の気分だ。でも少し不安もある。';
+    run();
+  </script>
+</body>
+</html>
