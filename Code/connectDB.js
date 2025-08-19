@@ -33,8 +33,6 @@ function text(id, s){ const el = qs(id); if(el) el.textContent = s; }
 
 /* ===== 認証（Redirect 方式） ===== */
 const provider = new firebase.auth.GoogleAuthProvider();
-// 必要ならスコープを追加
-// provider.addScope('profile');
 
 async function loginWithGoogle() {
   try {
@@ -44,8 +42,6 @@ async function loginWithGoogle() {
     alert("Googleログイン開始に失敗: " + err.message);
   }
 }
-
-// index.html のボタンから呼ぶ想定
 window.loginWithGoogle = loginWithGoogle;
 
 async function handleRedirectResultOnce() {
@@ -53,11 +49,9 @@ async function handleRedirectResultOnce() {
     const result = await auth.getRedirectResult();
     if (result && result.user) {
       console.log("Google login success:", result.user);
-      // 初回ユーザーならプロファイルを作成
       await ensureUserProfile(result.user);
     }
   } catch (err) {
-    // COOP/COEP 環境での window.close 警告は無視してよい
     console.error("Google login failed:", err);
   }
 }
@@ -70,17 +64,14 @@ window.logout = logout;
 
 /* ===== 認証状態監視 ===== */
 auth.onAuthStateChanged(async (user) => {
-  // 画面切り替え
   if (user) {
     show("notSigned", false);
     show("viewScreen", true);
     text("UserNameTag", user.displayName || "名無し");
     try {
       await ensureUserProfile(user);
-      // 自分のデータ読み込み例
       await fetchMyPlayer();
-      // 一覧購読が必要なら有効化（rulesが親.readを許す場合のみ）
-      subscribePlayersList({ enable: false }); // 一覧が要るなら true に
+      subscribePlayersList({ enable: false });
     } catch (e) {
       console.error("初期化中エラー:", e);
     }
@@ -90,17 +81,13 @@ auth.onAuthStateChanged(async (user) => {
   }
 });
 
-// リロード直後のリダイレクト結果回収
 handleRedirectResultOnce();
 
 /* ====== Realtime Database ユーティリティ ====== */
-
-// 自分用のノード参照
 function myRef(uid) {
   return database.ref(`players/${uid}`);
 }
 
-// 初回保存（なければ作る）
 async function ensureUserProfile(user) {
   const ref = myRef(user.uid);
   const snap = await ref.get();
@@ -110,26 +97,22 @@ async function ensureUserProfile(user) {
       PhotoURL: user.photoURL || "",
       CreatedAt: firebase.database.ServerValue.TIMESTAMP,
       UpdatedAt: firebase.database.ServerValue.TIMESTAMP,
-      // 必要な初期フィールドをここに追加
     };
     await ref.set(data);
   } else {
-    // 最終更新だけ更新したい場合
     await ref.update({ UpdatedAt: firebase.database.ServerValue.TIMESTAMP });
   }
 }
 
-// 自分のデータを読む
 async function fetchMyPlayer() {
   const user = auth.currentUser;
   if (!user) return;
   try {
     const ref = myRef(user.uid);
-    const snap = await ref.get(); // permission_denied の場合は rules を確認
+    const snap = await ref.get();
     if (snap.exists()) {
       const val = snap.val();
       console.log("my player:", val);
-      // 例: 画面に反映
       text("MyNameTag", val.Name || "");
     } else {
       console.log("my player: empty");
@@ -141,7 +124,6 @@ async function fetchMyPlayer() {
 }
 window.fetchMyPlayer = fetchMyPlayer;
 
-// 自分のデータを書き込む例
 async function updateMyPlayer(partial) {
   const user = auth.currentUser;
   if (!user) return;
@@ -153,19 +135,6 @@ async function updateMyPlayer(partial) {
 }
 window.updateMyPlayer = updateMyPlayer;
 
-// 一覧購読（必要な場合のみ）
-// ルール例:
-// {
-//   "rules": {
-//     "players": {
-//       ".read": "auth != null",                // 一覧が必要なら親のreadを許可
-//       ".write": false,
-//       "$uid": {
-//         ".write": "auth != null && auth.uid === $uid"
-//       }
-//     }
-//   }
-// }
 let playersUnsub = null;
 function subscribePlayersList({ enable = false } = {}) {
   if (!enable) {
@@ -191,7 +160,6 @@ function subscribePlayersList({ enable = false } = {}) {
   playersUnsub = () => ref.off("value", handler);
 }
 
-// 画面描画の例。必要に応じて置き換え
 function renderPlayers(list) {
   const el = qs("PlayersList");
   if (!el) return;
@@ -203,23 +171,6 @@ function renderPlayers(list) {
   });
 }
 
-/* ===== パブリックな一覧が必要なら別ツリーを使う =====
- * DBルールを厳しくする場合は、公開してよい最小データを
- * /publicPlayers に複製して、親.readを公開（認証不要）にする。
- * 例:
- * {
- *   "rules": {
- *     "publicPlayers": { ".read": true, ".write": false },
- *     "players": {
- *       "$uid": {
- *         ".read": "auth != null && auth.uid === $uid",
- *         ".write":"auth != null && auth.uid === $uid"
- *       }
- *     }
- *   }
- * }
- * その場合は subscribePublicPlayers() を使う。
- */
 function subscribePublicPlayers({ enable = false } = {}) {
   if (!enable) return;
   const ref = database.ref("publicPlayers");
@@ -236,7 +187,6 @@ function subscribePublicPlayers({ enable = false } = {}) {
 }
 window.subscribePublicPlayers = subscribePublicPlayers;
 
-/* ===== 便利関数をエクスポート（global） ===== */
 window.DB = {
   loginWithGoogle,
   logout,
