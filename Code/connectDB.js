@@ -99,7 +99,7 @@ async function upload(text_data, image_data) {
     if (!user) { alert("ログインしてください"); return; }
 
     // 投稿オブジェクト作成（画像なしなら image_data を省略）
-    const postRef = database.ref(`players/${user.id}posts`).push();
+    const postRef = database.ref(`players/${user.uid}/posts`).push();
     const now = firebase.database.ServerValue.TIMESTAMP;
 
     const payload = {
