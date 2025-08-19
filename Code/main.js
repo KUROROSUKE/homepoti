@@ -169,8 +169,7 @@ async function post() {
 
 
 const Follow_uid_list = ["I5wUbCT8cXRdwjXjSTI4ORJzoWh1"]
-const shownPostIds = new Set();
-
+const showed_PostId_list = new Set();
 function attachPostStreamForUid(uid) {
     const query = database
         .ref(`players/${uid}/posts`)
@@ -182,10 +181,10 @@ function attachPostStreamForUid(uid) {
         const postId = snap.key;
         if (!postId) return;
         if (!val.text || !String(val.text).trim()) return;
-        if (shownPostIds.has(postId)) return;
+        if (showed_PostId_list.has(postId)) return;
 
         renderPost(postId, uid)
-        .then(() => shownPostIds.add(postId)); // ← コールバックで追加
+        .then(() => showed_PostId_list.add(postId)); // ← コールバックで追加
     };
 
     query.on('child_added', handler);
