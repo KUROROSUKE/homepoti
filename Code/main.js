@@ -260,7 +260,7 @@ async function renderPost(postId, uid, position = 'top') {
 
     const post_div = document.createElement("div");
     post_div.id = `post_${n}`;
-    post_div.style.width = "100%";
+    post_div.style.width = "calc(100% - 20px)";
     post_div.style.height = "auto";
     post_div.style.border = "1px solid #000";
     post_div.style.margin = "0 5px 0 5px";
@@ -316,7 +316,7 @@ async function toViewScreen() {
 }
 
 // 「さらに読み込む」: 今の最古よりさらに古い塊を取得して末尾に追加
-loadMoreBtn?.addEventListener("click", async () => {
+loadMoreBtn.addEventListener("click", async () => {
     if (loadMoreBtn.disabled) return;
     loadMoreBtn.disabled = true;
     const prevLabel = loadMoreBtn.textContent;
@@ -351,3 +351,14 @@ loadMoreBtn?.addEventListener("click", async () => {
 
 // コインと価値の実装
 // UIの改善
+// ====== スクロール位置による「さらに読み込む」制御 ======
+const viewScreen = document.getElementById("viewScreen");
+
+viewScreen.addEventListener("scroll", () => {
+    const nearBottom = viewScreen.scrollTop + viewScreen.clientHeight >= viewScreen.scrollHeight;
+    if (nearBottom) {
+        loadMoreBtn.style.display = "block";
+    } else {
+        loadMoreBtn.style.display = "none";
+    }
+});

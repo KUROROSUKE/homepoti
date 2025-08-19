@@ -76,16 +76,19 @@ html, body {
     padding-bottom: 120px; /* ← 追加: 下部の固定ボタン + ナビ分の余白 */
 }
 
-/* 追加: さらに読み込むボタンを画面下に固定（ナビの上に出す） */
 #loadMoreBtn {
     position: fixed;
     left: 0;
     bottom: 60px; /* bottomNav の高さ分だけ上に */
     width: 100%;
+    max-width: 100vw;   /* ← 横スクロール防止 */
+    box-sizing: border-box; /* ← 枠線を含めて幅計算 */
     height: 50px;
-    z-index: 90; /* ナビ(100)より下でOK */
+    z-index: 90;
     background: #fff;
     border: 1px solid #ccc;
     cursor: pointer;
     font-size: 16px;
+    overflow-x: hidden; /* 念のため */
 }
+
