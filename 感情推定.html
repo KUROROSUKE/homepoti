@@ -1,150 +1,88 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="ja">
 <head>
   <meta charset="utf-8" />
-  <title>USEで日本語ポジ/ネガ推定（完全クライアント・推論ボタン付）</title>
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <!-- 404回避のダミーfavicon -->
-  <link rel="icon" href="data:,">
-  <style>
-    body{font-family:system-ui,sans-serif;margin:20px}
-    textarea{width:100%;height:140px;font-size:16px}
-    .panel{border:1px solid #ddd;border-radius:8px;padding:12px;margin-top:12px}
-    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre-wrap}
-    .badge{display:inline-block;padding:2px 8px;border-radius:12px;background:#eee}
-    .muted{color:#666;font-size:12px}
-    button{padding:8px 14px;border:1px solid #ccc;border-radius:8px;background:#f8f8f8;cursor:pointer}
-    button:disabled{opacity:.6;cursor:not-allowed}
-  </style>
+  <title>日本語 感情分析（単一HTML・フォルダ不要）</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
 </head>
 <body>
-  <h1>USEで日本語ポジ/ネガ推定（ゼロショット・類似度）</h1>
+<h1>日本語 感情分析（単一HTML）</h1>
 
-  <label for="text">テキスト</label>
-  <textarea id="text" placeholder="例）今日は最高の気分だ。でも少し不安もある。"></textarea>
-  <div class="muted">
-    ※ Universal Sentence Encoder で埋め込み → ポジ/ネガ代表文とコサイン類似度を比較。<br>
-    ※ しきい値は調整可。完全クライアント・鍵不要。
-  </div>
-  <p>
-    <button id="inferBtn">推論</button>
-    <span id="loadStat" class="muted"></span>
-  </p>
+<!-- 入力 -->
+<textarea id="txt" rows="6" cols="60">今日は最高。だけど明日は不安。</textarea><br />
+<button id="run">推論</button>
+<pre id="out"></pre>
 
-  <div class="panel">
-    <div>判定: <span id="label" class="badge">-</span></div>
-    <div>score(+-): <span id="score" class="mono">-</span></div>
-    <hr>
-    <div>詳細:</div>
-    <pre id="detail" class="mono">-</pre>
-  </div>
+<!-- 1) ライブラリはCDNから（小さめ）。モデルは外部通信しない -->
+<script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.0/dist/ort.min.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/otodn/sentiment_ja_js@master/dist/sentimentja_onnx.js"></script>
 
-  <!-- 必須: tfjs を先に読み込む -->
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.18.0/dist/tf.min.js"></script>
-  <!-- 次に USE 本体（tf の上に乗る） -->
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/universal-sentence-encoder@1.3.3/dist/universal-sentence-encoder.min.js"></script>
+<script>
+/* 2) モデルファイルをHTML内に埋め込む（Base64）。必要に応じて項目を追加。
+   - 左がモデル側の相対パス（元は ./model/ にあった想定）
+   - 右が Base64 文字列（application/octet-stream or utf-8）
+   例: base64は  `base64 -w0 ファイル` で作成
+*/
+const FILES = {
+  "tokenizer.json": "PASTE_BASE64_HERE",          // 例
+  "vocab.txt":      "PASTE_BASE64_HERE",          // 例
+  "config.json":    "PASTE_BASE64_HERE",          // 例
+  "model.onnx":     "PASTE_BASE64_HERE"           // 例（大きい）
+};
 
-  <script>
-    // ---------------------------------------------
-    // 設定
-    // ---------------------------------------------
-    const POS_PROTOS = [
-      '嬉しい','楽しい','最高だ','大好き','幸せ','素晴らしい','満足している','ありがたい',
-      'ワクワクする','快適だ','最高の気分だ','心が躍る','応援したい','素敵だ'
-    ];
-    const NEG_PROTOS = [
-      '最悪だ','嫌い','悲しい','腹が立つ','イライラする','不安だ','つらい','しんどい',
-      '不快だ','後悔している','絶望だ','怖い','やめたい','むかつく'
-    ];
-    const NEUTRAL_MARGIN = 0.05;
-
-    // ---------------------------------------------
-    // 数学ユーティリティ
-    // ---------------------------------------------
-    function dot(a,b){ let s=0; for(let i=0;i<a.length;i++) s+=a[i]*b[i]; return s; }
-    function norm(a){ return Math.sqrt(dot(a,a)); }
-    function cosine(a,b){ return dot(a,b) / (norm(a)*norm(b) + 1e-12); }
-
-    // ---------------------------------------------
-    // モデルとプロトタイプ埋め込みの準備
-    // ---------------------------------------------
-    let useModel=null, posEmbeds=null, negEmbeds=null, ready=false;
-
-    async function setup(){
-      const stat = document.getElementById('loadStat');
-      try{
-        stat.textContent = 'モデル読み込み中…';
-        await tf.ready();
-        useModel = await use.load(); // USE 読み込み（グローバル use）
-        // 代表文の埋め込みを先に計算してキャッシュ
-        const texts = POS_PROTOS.concat(NEG_PROTOS);
-        const em = await useModel.embed(texts);
-        const arr = await em.array();
-        posEmbeds = arr.slice(0, POS_PROTOS.length);
-        negEmbeds = arr.slice(POS_PROTOS.length);
-        em.dispose();
-        ready = true;
-        stat.textContent = '準備完了';
-      }catch(e){
-        stat.textContent = '初期化失敗: ' + e;
-        console.error(e);
+/* 3) fetch をフック。Analyzer.init("./model/") が行う取得を横取りし、埋め込みBlobを返す */
+const ORIG_FETCH = window.fetch.bind(window);
+window.fetch = async function(url, opts) {
+  try {
+    const u = typeof url === 'string' ? url : url.url;
+    // sentiment_ja_js は "./model/<name>" を相対取得する想定
+    const m = u.match(/\/model\/(.+)$/) || u.match(/\.\/model\/(.+)$/) || u.match(/^model\/(.+)$/);
+    if (m) {
+      const name = m[1];
+      if (!(name in FILES)) {
+        return new Response("not found in embedded FILES: " + name, { status: 404 });
       }
+      const b64 = FILES[name];
+      const bin = atob(b64);
+      const buf = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
+      // 簡易MIME判定
+      const type =
+        name.endsWith(".json") ? "application/json" :
+        name.endsWith(".txt")  ? "text/plain; charset=utf-8" :
+        "application/octet-stream";
+      return new Response(new Blob([buf], { type }), { status: 200 });
     }
+  } catch(e) {
+    console.warn("fetch hook error, falling back:", e);
+  }
+  return ORIG_FETCH(url, opts);
+};
 
-    // ---------------------------------------------
-    // 推定
-    // ---------------------------------------------
-    async function predict(text){
-      const em = await useModel.embed([text]);
-      const [vec] = await em.array();
-      em.dispose();
+/* 4) 実行部（import不要） */
+let analyzer;
+async function init() {
+  if (!window.SentimentJa) throw new Error("sentimentja_onnx.js 未読込");
+  // ./model/ を指定しても、上の fetch フックが埋め込みBlobを返すためフォルダ不要
+  analyzer = await window.SentimentJa.Analyzer.init("./model/");
+}
 
-      let pos = 0, neg = 0;
-      for (const v of posEmbeds) pos += cosine(vec, v);
-      for (const v of negEmbeds) neg += cosine(vec, v);
-      pos /= posEmbeds.length;
-      neg /= negEmbeds.length;
-
-      const score = Math.max(-1, Math.min(1, (pos - neg)));
-      let label = 'NEUTRAL';
-      if (score > NEUTRAL_MARGIN) label = 'POSITIVE';
-      else if (score < -NEUTRAL_MARGIN) label = 'NEGATIVE';
-
-      return { label, score: Number(score.toFixed(3)), posSim: Number(pos.toFixed(3)), negSim: Number(neg.toFixed(3)) };
+document.getElementById("run").onclick = async () => {
+  const out = document.getElementById("out");
+  try {
+    if (!analyzer) {
+      out.textContent = "初期化中...";
+      await init();
     }
-
-    // ---------------------------------------------
-    // UI
-    // ---------------------------------------------
-    const $ = id => document.getElementById(id);
-    const t = $('text'), labelEl = $('label'), scoreEl = $('score'), detailEl = $('detail');
-    const inferBtn = $('inferBtn');
-
-    inferBtn.addEventListener('click', async ()=>{
-      if (!ready) return;
-      const text = t.value.trim();
-      if (!text){ labelEl.textContent='-'; scoreEl.textContent='-'; detailEl.textContent='-'; return; }
-      inferBtn.disabled = true;
-      inferBtn.textContent = '推論中…';
-      try{
-        const r = await predict(text);
-        labelEl.textContent = r.label;
-        scoreEl.textContent = String(r.score);
-        detailEl.textContent = `posSim=${r.posSim}, negSim=${r.negSim}`;
-      }catch(e){
-        labelEl.textContent='ERROR';
-        scoreEl.textContent='?';
-        detailEl.textContent=String(e);
-        console.error(e);
-      }finally{
-        inferBtn.disabled = false;
-        inferBtn.textContent = '推論';
-      }
-    });
-
-    // 初期デモ
-    t.value = '今日は最高の気分だ。でも少し不安もある。';
-    setup(); // 読み込み開始
-  </script>
+    const inputs = document.getElementById("txt").value
+      .split(/\n+/).map(s => s.trim()).filter(Boolean);
+    const result = await analyzer.analyze(inputs);
+    out.textContent = JSON.stringify(result, null, 2); // {joy, anger, ...}
+  } catch (e) {
+    out.textContent = "推論エラー: " + e.message;
+    console.error(e);
+  }
+};
+</script>
 </body>
 </html>
