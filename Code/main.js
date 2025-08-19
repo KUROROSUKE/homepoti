@@ -164,6 +164,10 @@ async function post() {
 
 function toViewScreen() {
     // NoSQLサーバーから最近の投稿をとってくる
+    // uid と postId は保存時のものを渡す
+    loadImageFromRTDB("POST_ID", "USER_UID")
+        .then(({url}) => console.log("表示URL:", url))
+        .catch(console.error);
 }
 
 // PostScreen画面の表示
