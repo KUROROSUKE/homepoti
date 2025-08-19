@@ -176,7 +176,8 @@ async function post() {
 
 
 
-const Follow_uid_list = ["I5wUbCT8cXRdwjXjSTI4ORJzoWh1", "ykeRda4HA6e6Byhn1nqad8Tpwv92"]
+//const Follow_uid_list = ["I5wUbCT8cXRdwjXjSTI4ORJzoWh1", "ykeRda4HA6e6Byhn1nqad8Tpwv92"]
+if (window.attachGlobalPostStream) window.attachGlobalPostStream();
 const shownPostIds = new Set();
 
 // ===== ページネーション用の状態 =====
@@ -366,7 +367,7 @@ async function renderPost(postId, uid, position = 'top') {
 
     const post_div = document.createElement("div");
     post_div.id = `post_${n}`;
-    post_div.style.width = "calc(100% - 20px)";
+    post_div.style.width = "calc(100% - 40px)";
     post_div.style.height = "auto";
     post_div.style.border = "1px solid #000";
     post_div.style.margin = "0 5px 0 5px";
@@ -490,23 +491,19 @@ async function renderPost(postId, uid, position = 'top') {
  *   最後に oldestLoadedTime を画面内の最小 createdAt に更新。
  * 既存の toViewScreen 名は connectDB.js から呼ばれるため維持
  */
+// ===== 修正: 初期ロードを全員対象に =====
 async function toViewScreen() {
-    const page = await collectMergedPage(Follow_uid_list, null, postsPerPage);
+    const page = await collectAllPage(null, postsPerPage);
     if (page.length === 0) {
         loadMoreBtn.style.display = "none";
         return;
     }
-
-    // 降順（新しい→古い）でそのまま末尾へ追加
+    // 降順（新しい→古い）で末尾追加
     for (let i = 0; i < page.length; i++) {
         const { postId, uid } = page[i];
         await renderPost(postId, uid, 'bottom');
     }
-
-    // 画面中の最も古い createdAt を保持
     oldestLoadedTime = page[page.length - 1].createdAt;
-
-    // 追加: 初期表示は下端に居るかどうかでボタン表示を決める
     loadMoreBtn.style.display = isAtBottom(viewScreen) ? "block" : "none";
 }
 
@@ -514,7 +511,6 @@ async function toViewScreen() {
 loadMoreBtn.addEventListener("click", async () => {
     if (loadMoreBtn.disabled) return;
 
-    // 追加: クリック時点で下端にいたかを記録
     const wasAtBottom = isAtBottom(viewScreen);
 
     loadMoreBtn.disabled = true;
@@ -522,36 +518,26 @@ loadMoreBtn.addEventListener("click", async () => {
     loadMoreBtn.textContent = "読み込み中...";
 
     try {
-        const page = await collectMergedPage(Follow_uid_list, oldestLoadedTime, postsPerPage);
+        const page = await collectAllPage(oldestLoadedTime, postsPerPage);
         if (page.length === 0) {
             loadMoreBtn.textContent = "これ以上ありません";
-            // 下端に居るときだけ見せるルールを維持
             loadMoreBtn.style.display = isAtBottom(viewScreen) ? "block" : "none";
             return;
         }
-
-        // 取得したページを降順で末尾追加
         for (let i = 0; i < page.length; i++) {
             const { postId, uid } = page[i];
             await renderPost(postId, uid, 'bottom');
         }
-
-        // 次の基準を更新（今回ページ内で最も古い）
         oldestLoadedTime = page[page.length - 1].createdAt;
 
-        // 追加: 事前に下端だった場合は追従して下端へスクロール維持
         if (wasAtBottom) {
             viewScreen.scrollTop = viewScreen.scrollHeight - viewScreen.clientHeight;
         }
-
         loadMoreBtn.textContent = prevLabel;
-
-        // 追加: 追従後に表示可否を再評価
         loadMoreBtn.style.display = isAtBottom(viewScreen) ? "block" : "none";
     } catch (e) {
         console.error(e);
         loadMoreBtn.textContent = "エラー。再試行";
-        // エラー時も現在のスクロール位置に合わせて可視制御
         loadMoreBtn.style.display = isAtBottom(viewScreen) ? "block" : "none";
     } finally {
         setTimeout(() => { loadMoreBtn.disabled = false; }, LOAD_DELAY_MS);
@@ -863,4 +849,59 @@ function switchTab(tab) {
         coinHUDController.hide();
     }
 }
+
+
+
+
+// ===== 追加: 全員の投稿を集めるページャ =====
+async function collectAllPage(beforeTime, limit = postsPerPage) {
+    const collected = [];
+    const playersSnap = await database.ref("players").get();
+    if (!playersSnap.exists()) return [];
+
+    playersSnap.forEach(playerSnap => {
+        const uid = playerSnap.key;
+        const postsSnap = playerSnap.child("posts");
+        postsSnap.forEach(child => {
+            const val = child.val() || {};
+            // 空テキストは除外
+            if (!val.text || !val.text.trim()) return;
+            const ts = typeof val.createdAt === "number" ? val.createdAt : 0;
+            if (beforeTime == null || ts < beforeTime) {
+                collected.push({ uid, postId: child.key, createdAt: ts });
+            }
+        });
+    });
+
+    // 新しい→古い
+    collected.sort((a, b) => b.createdAt - a.createdAt);
+    return collected.slice(0, limit);
+}
+
+// ===== 追加: 全ユーザーの最新投稿をリアルタイム購読 =====
+// 既存の attachPostStreamForUid を各ユーザーに動的に適用する。
+// Follow_uid_list の静的依存を排除する:contentReference[oaicite:0]{index=0}。
+const _attachedPostStreams = new Set();
+async function attachGlobalPostStream() {
+    // 既存ユーザーにアタッチ
+    const playersSnap = await database.ref("players").get();
+    if (playersSnap.exists()) {
+        playersSnap.forEach(playerSnap => {
+            const uid = playerSnap.key;
+            if (!_attachedPostStreams.has(uid)) {
+                _attachedPostStreams.add(uid);
+                attachPostStreamForUid(uid);
+            }
+        });
+    }
+    // 新規ユーザー発生にも追従
+    database.ref("players").on("child_added", (snap) => {
+        const uid = snap.key;
+        if (!_attachedPostStreams.has(uid)) {
+            _attachedPostStreams.add(uid);
+            attachPostStreamForUid(uid);
+        }
+    });
+}
+
 // ========================= ここまで：マーケット専用コインHUD制御 =========================
