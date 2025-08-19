@@ -169,6 +169,7 @@ function toViewScreen() {
 
     let n = 1;
     const img_tag = document.createElement("img");
+    img_tag.alt = "base64 image";
     let img_tag_id = `post${n}_img`;
     img_tag.id = img_tag_id;
     const uid = document.getElementById("uidInput").value;
