@@ -40,6 +40,7 @@ auth.onAuthStateChanged(async (authUser) => {
     // 最初の画面反映
     //TODO: document.getElementById('UserNameTag').textContent = `名前： ${name}`;
     document.getElementById('viewScreen').style.display = 'block';
+    document.getElementById("bottomNav") .style.display = "flex";
     document.getElementById('notSigned' ).style.display = 'none';
 
     // 全体のリアルタイム更新監視
@@ -62,14 +63,6 @@ auth.onAuthStateChanged(async (authUser) => {
         console.error("データ取得エラー:", error);
     });
 });
-function logout() {
-    auth.signOut();
-    document.getElementById("viewScreen").style.display = "none";
-    document.getElementById("postScreen").style.display = "none";
-    document.getElementById("notSigned" ).style.display = "block";
-}
-// Google login
-const provider = new firebase.auth.GoogleAuthProvider();
 
 // Google login
 function loginWithGoogle() {
@@ -88,7 +81,35 @@ function loginWithGoogle() {
     });
 }
 
+function logout() {
+    auth.signOut();
+    document.getElementById("viewScreen").style.display = "none";
+    document.getElementById("bottomNav") .style.display = "none";
+    document.getElementById("postScreen").style.display = "none";
+    document.getElementById("notSigned" ).style.display = "block";
+}
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// ================================== ここら辺は後回し！すぐできるじゃろ！ ===================================
 // Sign up with email & password
 function SignUpWithMail() {
     const email = prompt("メールアドレスを入力してください:");
