@@ -100,18 +100,22 @@ async function upload(text_data, image_data) {
 
     // 投稿オブジェクト作成（画像なしなら image_data を省略）
     const postRef = database.ref(`players/${user.uid}/posts`).push();
-    const now = firebase.database.ServerValue.TIMESTAMP;
 
-    const payload = {
-        id: postRef.key,
-        uid: user.uid,
-        name: user.displayName || "",
-        photoURL: user.photoURL || "",
-        text_data,
-        createdAt: now,
-        updatedAt: now,
-        ...(image_data ? { image_data: image_data } : {})  // ← 無いときはキー自体を作らない
-    };
+    // 汚い。後で直す
+    if (image_data) {
+        const payload = {
+            id: postRef.key,
+            photoURL: user.photoURL || "",
+            text_data,
+            image_data
+        };
+    } else {
+        const payload = {
+            id: postRef.key,
+            photoURL: user.photoURL || "",
+            text_data
+        };
+    }
 
     await postRef.set(payload);
 }
