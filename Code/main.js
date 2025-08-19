@@ -144,19 +144,30 @@ async function post() {
     const ImageInputTag = document.getElementById("fileInput");
     const blob_image =  ImageInputTag.files[0] ? await resizeImage() : null;   //もし画像があれば、リサイズしてcanvasの方は消す。
 
-    // ここはイメージ。あとで実装。
-    upload(content_text, blob_image);
+    try {
+        // ここはイメージ。あとで実装。
+        await upload(content_text, blob_image); // ★ 送信を待ってから
 
-    // 使ったところを消しておく
-    TextInputTag .value = "";
-    ImageInputTag.value = "";
-    
-    const count = textInput.value.length;
-    charCount.textContent = count;
-    charCount.style.color = '#1d9bf0'; // 青
-    // オートリサイズ
-    textInput.style.height = 'auto';
-    textInput.style.height = Math.max(36, textInput.scrollHeight) + 'px';
+        // ★ 追加: 投稿ボーナス +1 コイン
+        const user = auth.currentUser;
+        if (user) {
+            await changeCoins(user.uid, 1);
+        }
+
+        // 使ったところを消しておく（成功時のみ）
+        TextInputTag.value = "";
+        ImageInputTag.value = "";
+        
+        const count = textInput.value.length;
+        charCount.textContent = count;
+        charCount.style.color = '#1d9bf0'; // 青
+        // オートリサイズ
+        textInput.style.height = 'auto';
+        textInput.style.height = Math.max(36, textInput.scrollHeight) + 'px';
+    } catch (e) {
+        console.error(e);
+        alert("投稿に失敗しました");
+    }
 }
 
 
