@@ -125,7 +125,7 @@ async function resizeImage(maxLong=640) {
 }
 
 
-function post() {
+async function post() {
     // NoSQLサーバーへアップロードする。
     // ファイルは最大で画像1枚（500KBくらいに圧縮して送りたい）
     // 文章は最大で200文字かな
@@ -137,7 +137,7 @@ function post() {
     
     //画像入力
     const ImageInputTag = document.getElementById("fileInput");
-    const blob_image =  Boolean(ImageInputTag.files[0]) ? resizeImage() : null;   //もし画像があれば、リサイズしてcanvasの方は消す。
+    const blob_image =  ImageInputTag.files[0] ? await resizeImage() : null;   //もし画像があれば、リサイズしてcanvasの方は消す。
 
     // ここはイメージ。あとで実装。
     upload(content_text, blob_image);

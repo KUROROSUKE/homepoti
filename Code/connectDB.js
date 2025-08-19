@@ -1,4 +1,3 @@
-
 // ============ authentication      ============
 // firebase Realtime DB config
 const firebaseConfig = {
@@ -12,8 +11,11 @@ const firebaseConfig = {
     measurementId: "G-W52MY9CN8L",
 };
 firebase.initializeApp(firebaseConfig);
-const database = firebase.database();
+
+// ← 明示しておく（ReferenceError対策）
+const db = firebase.database();
 const auth = firebase.auth();
+const storage = firebase.storage();
 
 function getRandomName() {
     const animals = ["cat", "dog", "bird", "bear", "monkey", "fox", "deer", "penguin"];
@@ -21,51 +23,40 @@ function getRandomName() {
     return rand;
 }
 
-
 auth.onAuthStateChanged(async (authUser) => {
     if (!authUser) return;
 
-    const playerRef = database.ref(`players/${authUser.uid}`);
+    const playerRef = db.ref(`players/${authUser.uid}`);
     const snapshot  = await playerRef.once('value');
     let name = snapshot.child('Name').val();
 
-    // もしデータに自分の情報がない -> はじめてサインインしたなら
     if (!snapshot.exists()) {
         name = getRandomName();
-        await playerRef.set({
-            Name       : name,
-        });
-    } else if (!name) { // 名前だけがないなら
+        await playerRef.set({ Name: name });
+    } else if (!name) {
         name = getRandomName();
         await playerRef.update({ Name: name, IsSearched: false });
     }
 
     // 最初の画面反映
-    //TODO: document.getElementById('UserNameTag').textContent = `名前： ${name}`;
     document.getElementById('viewScreen').style.display = 'block';
     document.getElementById("bottomNav") .style.display = "flex";
     document.getElementById('notSigned' ).style.display = 'none';
 
-    // 全体のリアルタイム更新監視
-    const playersRef = database.ref('players/');
+    // 家族一覧の購読（必要なら実装を拡張）
+    const playersRef = db.ref('players/');
     playersRef.on('value', (snapshot) => {
-        if (snapshot.exists()) {
-            // 家族内の投稿を監視・追加
-            const data = snapshot.val();
-
-            const playersArray = Object.entries(data).map(([userId, playerData]) => ({
-                userId,
-                name: playerData.Name || "名無し",
-            }));
-
-        } else {
-            console.log("プレイヤーデータが存在しません");
-        }
+        if (!snapshot.exists()) return;
+        const data = snapshot.val();
+        const playersArray = Object.entries(data).map(([userId, playerData]) => ({
+            userId,
+            name: playerData.Name || "名無し",
+        }));
+        // TODO: UI反映
     }, (error) => {
         console.error("データ取得エラー:", error);
     });
 });
-
 
 // Google login
 function loginWithGoogle() {
@@ -74,16 +65,17 @@ function loginWithGoogle() {
     .then((result) => {
         const user = result.user;
         console.log("Google login success:", user);
-        document.getElementById("LoginModal").style.display = "none";
-        document.getElementById("UserDataModal").style.display = "block";
-        startPeer(); // or any function you want to call after login
+        const lm = document.getElementById("LoginModal");
+        const um = document.getElementById("UserDataModal");
+        if (lm) lm.style.display = "none";
+        if (um) um.style.display = "block";
+        if (typeof startPeer === "function") startPeer();
     })
     .catch((error) => {
         console.error("Google login failed: ", error);
         alert("Googleログインに失敗しました");
     });
 }
-// logout
 function logout() {
     auth.signOut();
     document.getElementById("viewScreen").style.display = "none";
@@ -92,91 +84,59 @@ function logout() {
     document.getElementById("notSigned" ).style.display = "block";
 }
 
-
-
+/**
+ * 投稿を players/{uid}/posts/{postId} に保存。
+ * image_data は以下のいずれか:
+ *  - null（画像なし）
+ *  - Blob（main.js の resizeImage() 結果）
+ *  - string（すでに持っているダウンロードURL）
+ */
 async function upload(text_data, image_data) {
     const user = auth.currentUser;
     if (!user) { alert("ログインしてください"); return; }
 
-    // 投稿オブジェクト作成（画像なしなら image_data を省略）
-    const postRef = db.ref("posts").push();
-    const now = firebase.database.ServerValue.TIMESTAMP;
+    // 先に postId を採番
+    const postsRoot = db.ref(`players/${user.uid}/posts`);
+    const postRef   = postsRoot.push();
+    const postId    = postRef.key;
 
+    // 画像が Blob or Promise<Blob> の場合は Storage にアップロードして URL 化
+    let imageURL = null;
+    try {
+        const maybeBlob = (image_data && typeof image_data.then === "function")
+            ? await image_data
+            : image_data;
+        if (maybeBlob instanceof Blob) {
+            const path = `posts/${user.uid}/${postId}.jpg`;
+            const sref = storage.ref().child(path);
+            await sref.put(maybeBlob, { contentType: "image/jpeg" });
+            imageURL = await sref.getDownloadURL();
+        } else if (typeof maybeBlob === "string") {
+            imageURL = maybeBlob; // 既存URL
+        }
+    } catch (e) {
+        console.error("画像アップロード失敗:", e);
+        alert("画像アップロードに失敗しました: " + e.message);
+        // 画像失敗時もテキストだけ保存したいなら継続
+    }
+
+    const now = firebase.database.ServerValue.TIMESTAMP;
     const payload = {
-        id: postRef.key,
+        id: postId,
         uid: user.uid,
         name: user.displayName || "",
         photoURL: user.photoURL || "",
         text_data,
         createdAt: now,
         updatedAt: now,
-        ...(image_data ? { image_data: image_data } : {})  // ← 無いときはキー自体を作らない
+        ...(imageURL ? { image_data: imageURL } : {})
     };
 
     await postRef.set(payload);
+    console.log("post saved:", postId);
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-// ================================== ここら辺は後回し！すぐできるじゃろ！ ===================================
-// Sign up with email & password
-function SignUpWithMail() {
-    const email = prompt("メールアドレスを入力してください:");
-    const password = prompt("パスワードを入力してください（6文字以上）:");
-    
-    if (!email || !password) {
-        alert("メールアドレスとパスワードを入力してください");
-        return;
-    }
-
-    auth.createUserWithEmailAndPassword(email, password)
-    .then((userCredential) => {
-        const user = userCredential.user;
-        console.log("サインアップ成功:", user);
-        alert("サインアップ成功しました");
-        startPeer(); // optional if you want to start after signup
-    })
-    .catch((error) => {
-        console.error("サインアップ失敗:", error);
-        alert("サインアップに失敗しました: " + error.message);
-    });
-}
-// Login with email & password
-function loginWithMail() {
-    const email = prompt("メールアドレスを入力してください:");
-    const password = prompt("パスワードを入力してください:");
-    
-    if (!email || !password) {
-        alert("メールアドレスとパスワードを入力してください");
-        return;
-    }
-
-    auth.signInWithEmailAndPassword(email, password)
-    .then((userCredential) => {
-        const user = userCredential.user;
-        console.log("ログイン成功:", user);
-        alert("ログイン成功しました");
-        document.getElementById("LoginModal").style.display = "none";
-        document.getElementById("UserDataModal").style.display = "block";
-        startPeer(); // optional if you want to start after login
-    })
-    .catch((error) => {
-        console.error("ログイン失敗:", error);
-        alert("ログインに失敗しました: " + error.message);
-    });
-}
-
+// 公開API
+window.loginWithGoogle = loginWithGoogle;
+window.logout = logout;
+window.upload = upload;
