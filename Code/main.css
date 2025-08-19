@@ -7,7 +7,7 @@
     height: 60px;
     background-color: #f0f0f0;
     display: grid;
-    grid-template-columns: 1fr auto 1fr;
+    grid-template-columns: 1fr auto 1fr auto 1fr auto 1fr;
     align-items: center;
     border-top: 1px solid #ccc;
     z-index: 100;
@@ -18,13 +18,14 @@
 .nav_buttons { width: 100%; height: 100%; background: transparent; border: none; cursor: pointer; font-size: 16px; }
 
 /* ← 追加: PostScreen を縦横センターにする */
-#postScreen {
-    display: flex;
+#postScreen, #servicesScreen, #marketScreen {
+    display: none;
     justify-content: center;
-    align-items: center;
+    align-items: start;
     min-height: calc(100vh - 60px); /* ナビ分を引く */
     box-sizing: border-box;
     width: 100%;
+    padding-bottom: 120px;
 }
 
 /* 入力UI */
@@ -58,7 +59,7 @@
     width: 100%;
     max-width: 750px;
     position: relative;
-    margin: 20px auto 80px; /* ← 追加: 横中央 + 下はナビ分 */
+    margin: 20px auto 20px; /* ← 横中央 */
 }
 
 html, body {
@@ -73,7 +74,7 @@ html, body {
     overflow-y: auto; /* 必要なときだけ縦スクロール */
     height: calc(100vh - 70px);
     box-sizing: border-box;
-    padding-bottom: 120px; /* ← 追加: 下部の固定ボタン + ナビ分の余白 */
+    padding-bottom: 120px; /* ← 下部の固定ボタン + ナビ分の余白 */
 }
 
 #loadMoreBtn {
@@ -92,10 +93,9 @@ html, body {
     overflow-x: hidden; /* 念のため */
 }
 
-
 #viewScreen img {
-  max-width: 200px;   /* 横長画像は横200pxに収まる */
-  max-height: 200px;  /* 縦長画像は縦200pxに収まる */
+  max-width: 200px;
+  max-height: 200px;
   width: auto;
   height: auto;
   display: block;
@@ -186,4 +186,64 @@ html, body {
   padding: 6px 12px;
   font-weight: 700;
   box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+}
+
+/* ★ 追加: サービスUI */
+.svc-input {
+  width: 100%;
+  margin: 6px 0;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid #ccc;
+  box-sizing: border-box;
+}
+.svc-inline {
+  margin-right: 8px;
+}
+.svc-list {
+  display: grid;
+  gap: 10px;
+}
+.svc-card {
+  border: 1px solid #eee;
+  border-radius: 12px;
+  padding: 12px;
+}
+.svc-title {
+  font-weight: 700;
+  font-size: 16px;
+  margin-bottom: 4px;
+}
+.svc-desc {
+  color: #444;
+  margin-bottom: 8px;
+  white-space: pre-wrap;
+}
+.svc-meta {
+  font-size: 13px;
+  color: #666;
+}
+.svc-actions {
+  margin-top: 8px;
+  display: flex;
+  gap: 8px;
+}
+.badge {
+  display: inline-block;
+  min-width: 20px;
+  padding: 2px 6px;
+  border-radius: 10px;
+  background: #ffef9f;
+  border: 1px solid #f3b94c;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+/* ★ 追加: 注文リスト */
+.order-item {
+  border: 1px dashed #ddd;
+  border-radius: 10px;
+  padding: 8px 10px;
+  font-size: 14px;
 }

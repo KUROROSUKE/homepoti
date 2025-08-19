@@ -181,7 +181,7 @@ function isAtBottom(el) {
 }
 
 /**
- * 全件取得してローカルでフィルタ＆ソート（インデックス不要）:contentReference[oaicite:3]{index=3}
+ * 全件取得してローカルでフィルタ＆ソート（インデックス不要）
  * beforeTime が null のときは最新から limit 件。
  * beforeTime が数値のときは createdAt < beforeTime の範囲から limit 件（＝今より次に古い塊）。
  */
@@ -477,7 +477,7 @@ async function renderPost(postId, uid, position = 'top') {
  *   最新から limit 件を降順で取得し、その順で末尾追加。
  *   → 画面全体は上が新しい、下が古い。
  *   最後に oldestLoadedTime を画面内の最小 createdAt に更新。
- * 既存の toViewScreen 名は connectDB.js から呼ばれるため維持:contentReference[oaicite:4]{index=4}:contentReference[oaicite:5]{index=5}
+ * 既存の toViewScreen 名は connectDB.js から呼ばれるため維持
  */
 async function toViewScreen() {
     const page = await collectMergedPage(Follow_uid_list, null, postsPerPage);
@@ -560,3 +560,247 @@ viewScreen.addEventListener("scroll", () => {
         loadMoreBtn.style.display = "none";
     }
 });
+
+
+// ========================= ここから新機能: サービスとマーケット =========================
+
+// サービス保存（作成または上書き）
+async function upsertService(svcId, { title, desc, price, active }) {
+    const user = auth.currentUser;
+    if (!user) { alert("ログインしてください"); return; }
+    const id = svcId || database.ref(`players/${user.uid}/services`).push().key;
+    const payload = {
+        id,
+        title: (title || "").trim(),
+        desc: (desc || "").trim(),
+        price: Math.max(0, Number(price) || 0),
+        active: !!active,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+    };
+    await database.ref(`players/${user.uid}/services/${id}`).update(payload);
+    return id;
+}
+
+// サービス削除
+async function deleteService(svcId) {
+    const user = auth.currentUser;
+    if (!user) return;
+    await database.ref(`players/${user.uid}/services/${svcId}`).remove();
+}
+
+// 購入処理
+async function buyService(sellerUid, service) {
+    const buyer = auth.currentUser;
+    if (!buyer) { alert("ログインしてください"); return; }
+    if (buyer.uid === sellerUid) { alert("自分のサービスは買えません"); return; }
+
+    // 二重購入防止: /purchases/{buyerUid}/{sellerUid}_{serviceId} をトグルに
+    const purchaseKey = `${sellerUid}_${service.id}`;
+    const flagRef = database.ref(`purchases/${buyer.uid}/${purchaseKey}`);
+
+    // 1) まだフラグが無い場合のみ進める
+    const tx = await flagRef.transaction((cur) => cur ? cur : true);
+    if (!tx.committed) return; // 同時購入の片方を排除
+    if (tx.snapshot.val() !== true) return;
+
+    // 2) コイン決済
+    const ok = await spendCoins(buyer.uid, service.price);
+    if (!ok) {
+        // フラグ戻す
+        await flagRef.remove();
+        alert("コインが足りません");
+        return;
+    }
+
+    // 3) 売り手に加算
+    await changeCoins(sellerUid, service.price);
+
+    // 4) 注文レコードを作成（売り手側に通知）
+    const orderRef = database.ref(`players/${sellerUid}/orders`).push();
+    const order = {
+        id: orderRef.key,
+        serviceId: service.id,
+        serviceTitle: service.title,
+        price: service.price,
+        buyerUid: buyer.uid,
+        buyerName: window.currentUserName || "anonymous",
+        createdAt: Date.now(),
+        status: "paid",
+    };
+    await orderRef.set(order);
+
+    alert("購入しました");
+}
+
+// 画面要素
+const myServicesList = document.getElementById('myServicesList');
+const marketList     = document.getElementById('marketList');
+const myOrdersList   = document.getElementById('myOrdersList');
+
+// 自分のサービス一覧描画
+function renderMyServiceCard(svc) {
+    const card = document.createElement('div');
+    card.className = 'svc-card';
+
+    const title = document.createElement('div');
+    title.className = 'svc-title';
+    title.textContent = svc.title || '(無題)';
+
+    const desc = document.createElement('div');
+    desc.className = 'svc-desc';
+    desc.textContent = svc.desc || '';
+
+    const meta = document.createElement('div');
+    meta.className = 'svc-meta';
+    meta.textContent = `価格: ${svc.price} 🪙 / 状態: ${svc.active ? '公開' : '停止'}`;
+
+    const actions = document.createElement('div');
+    actions.className = 'svc-actions';
+
+    const editBtn = document.createElement('button');
+    editBtn.textContent = '編集';
+    editBtn.onclick = () => {
+        document.getElementById('svcTitle').value = svc.title || '';
+        document.getElementById('svcDesc').value  = svc.desc || '';
+        document.getElementById('svcPrice').value = svc.price || 0;
+        document.getElementById('svcActive').checked = !!svc.active;
+        document.getElementById('svcAddBtn').dataset.editing = svc.id;
+        document.getElementById('svcAddBtn').textContent = '更新';
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    };
+
+    const delBtn = document.createElement('button');
+    delBtn.textContent = '削除';
+    delBtn.onclick = async () => {
+        if (!confirm('削除しますか？')) return;
+        await deleteService(svc.id);
+    };
+
+    actions.appendChild(editBtn);
+    actions.appendChild(delBtn);
+
+    card.appendChild(title);
+    card.appendChild(desc);
+    card.appendChild(meta);
+    card.appendChild(actions);
+    return card;
+}
+
+// マーケット用カード
+function renderMarketCard(sellerUid, sellerName, svc) {
+    const card = document.createElement('div');
+    card.className = 'svc-card';
+
+    const title = document.createElement('div');
+    title.className = 'svc-title';
+    title.textContent = svc.title || '(無題)';
+
+    const desc = document.createElement('div');
+    desc.className = 'svc-desc';
+    desc.textContent = svc.desc || '';
+
+    const meta = document.createElement('div');
+    meta.className = 'svc-meta';
+    meta.textContent = `出品者: ${sellerName || 'unknown'} / 価格: ${svc.price} 🪙`;
+
+    const actions = document.createElement('div');
+    actions.className = 'svc-actions';
+
+    const buyBtn = document.createElement('button');
+    buyBtn.textContent = '購入';
+    buyBtn.onclick = () => buyService(sellerUid, svc);
+
+    actions.appendChild(buyBtn);
+
+    card.appendChild(title);
+    card.appendChild(desc);
+    card.appendChild(meta);
+    card.appendChild(actions);
+    return card;
+}
+
+// 注文アイテム描画
+function renderOrderItem(o) {
+    const item = document.createElement('div');
+    item.className = 'order-item';
+    item.textContent = `${o.buyerName} が「${o.serviceTitle}」を ${o.price}🪙 で購入 (${new Date(o.createdAt).toLocaleString()})`;
+    return item;
+}
+
+// 初期化と購読
+window.initServicesAndMarket = function initServicesAndMarket() {
+    const addBtn = document.getElementById('svcAddBtn');
+    const titleEl = document.getElementById('svcTitle');
+    const descEl  = document.getElementById('svcDesc');
+    const priceEl = document.getElementById('svcPrice');
+    const activeEl= document.getElementById('svcActive');
+
+    // 追加 / 更新
+    addBtn.onclick = async () => {
+        const title = titleEl.value;
+        const desc  = descEl.value;
+        const price = Number(priceEl.value || 0);
+        const active= !!activeEl.checked;
+
+        const editingId = addBtn.dataset.editing || null;
+        const id = await upsertService(editingId, { title, desc, price, active });
+
+        // フォームリセット
+        delete addBtn.dataset.editing;
+        addBtn.textContent = '追加 / 更新';
+        titleEl.value = '';
+        descEl.value  = '';
+        priceEl.value = '';
+        activeEl.checked = true;
+    };
+
+    const cu = auth.currentUser;
+    if (!cu) return;
+
+    // 自分のサービス購読
+    database.ref(`players/${cu.uid}/services`).on('value', (snap) => {
+        myServicesList.innerHTML = '';
+        const val = snap.val() || {};
+        Object.values(val).forEach((svc) => {
+            myServicesList.appendChild(renderMyServiceCard(svc));
+        });
+    });
+
+    // 自分の注文購読
+    database.ref(`players/${cu.uid}/orders`).limitToLast(100).on('value', (snap) => {
+        myOrdersList.innerHTML = '';
+        const val = snap.val() || {};
+        const list = Object.values(val).sort((a,b)=> (a.createdAt||0)-(b.createdAt||0));
+        list.forEach(o => myOrdersList.appendChild(renderOrderItem(o)));
+        // バッジは未読管理が無いのでカウントだけ更新
+        const badge = document.getElementById('ordersBadge');
+        if (badge) {
+            const n = list.length;
+            if (n > 0) {
+                badge.textContent = String(n);
+                badge.style.display = 'inline-block';
+            } else {
+                badge.style.display = 'none';
+            }
+        }
+    });
+
+    // マーケット購読（全ユーザーをざっくり走査）
+    // プロトタイプのため単純に players/*/services を走査
+    database.ref('players').on('value', async (snap) => {
+        marketList.innerHTML = '';
+        const players = snap.val() || {};
+        const buyerUid = cu.uid;
+
+        Object.entries(players).forEach(([uid, p]) => {
+            if (!p || !p.services) return;
+            const name = p.Name || 'unknown';
+            Object.values(p.services).forEach((svc) => {
+                if (!svc.active) return;
+                if (uid === buyerUid) return; // 自分は除外
+                marketList.appendChild(renderMarketCard(uid, name, svc));
+            });
+        });
+    });
+};

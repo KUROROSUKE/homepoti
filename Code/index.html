@@ -12,8 +12,8 @@
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-storage-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
-  <!-- 3) その後に connectDB を通常スクリプトとして -->
-  <script src="connectDB.js"></script>
+    <!-- 3) その後に connectDB を通常スクリプトとして -->
+    <script src="connectDB.js"></script>
 </head>
 <body>
     <!-- ★ 追加: コインHUD（ログイン時に表示） -->
@@ -21,18 +21,21 @@
       🪙 <span id="coinBalance">0</span>
     </div>
 
+    <!-- 効果音（任意） -->
+    <audio id="ordersSound" preload="auto">
+      <source src="data:audio/mp3;base64,//uQZAAAAAAAAAAAAAAAAAAAA" type="audio/mpeg">
+    </audio>
+
     <!-- ログインしてなかったら表示 -->
     <div style="text-align: center;" id="notSigned">
         <h3>ログインしてください</h3>
         <button onclick="loginWithGoogle()">Googleでログイン</button>
     </div>
 
-    <!-- ログインしてたら表示 -->
+    <!-- ログインしてたら表示: 3タブ -->
     <div id="viewScreen" style="display:none;overflow-y:scroll;height:calc(100vh - 70px)">
         <button id="loadMoreBtn" style="display:none;">さらに読み込む</button>
     </div>
-
-    <!-- さらに読み込む（画面下部固定） -->
 
     <div id="postScreen" style="display:none;">
         <div class="InputForm">
@@ -44,25 +47,60 @@
         </div>
     </div>
 
+    <!-- ★ 新規: 自分のサービス管理 -->
+    <div id="servicesScreen" style="display:none;">
+      <div class="InputForm">
+        <h3>サービスを登録</h3>
+        <input id="svcTitle" class="svc-input" type="text" placeholder="タイトル" maxlength="40">
+        <textarea id="svcDesc" class="svc-input" placeholder="説明" maxlength="200"></textarea>
+        <input id="svcPrice" class="svc-input" type="number" min="0" step="1" placeholder="価格（コイン）">
+        <label class="svc-inline"><input id="svcActive" type="checkbox" checked> 公開</label>
+        <button id="svcAddBtn">追加 / 更新</button>
+      </div>
+
+      <div class="InputForm">
+        <h3>自分のサービス</h3>
+        <div id="myServicesList" class="svc-list"></div>
+      </div>
+
+      <div class="InputForm">
+        <h3>受けた注文 <span id="ordersBadge" class="badge" style="display:none;">0</span></h3>
+        <div id="myOrdersList" class="order-list"></div>
+      </div>
+    </div>
+
+    <!-- ★ 新規: マーケット -->
+    <div id="marketScreen" style="display:none;">
+      <div class="InputForm">
+        <h3>マーケット</h3>
+        <div id="marketList" class="svc-list"></div>
+      </div>
+    </div>
+
     <div id="bottomNav" style="display: none;">
         <div class="navigater">
-        <button class="nav_buttons" onclick="switchTab('view')" aria-label="ViewScreen">投稿を見る</button>
+          <button class="nav_buttons" onclick="switchTab('view')" aria-label="ViewScreen">投稿</button>
         </div>
         <div class="divider"></div>
         <div class="navigater">
-        <button class="nav_buttons" onclick="switchTab('post')" aria-label="PostScreen">投稿する</button>
+          <button class="nav_buttons" onclick="switchTab('post')" aria-label="PostScreen">投稿する</button>
+        </div>
+        <div class="divider"></div>
+        <div class="navigater">
+          <button class="nav_buttons" onclick="switchTab('services')" aria-label="ServicesScreen">サービス</button>
+        </div>
+        <div class="divider"></div>
+        <div class="navigater">
+          <button class="nav_buttons" onclick="switchTab('market')" aria-label="MarketScreen">マーケット</button>
         </div>
     </div>
 
     <script>
         function switchTab(tab) {
-        if (tab === "view") {
-            document.getElementById("viewScreen").style.display = "block";
-            document.getElementById("postScreen").style.display = "none";
-        } else {
-            document.getElementById("viewScreen").style.display = "none";
-            document.getElementById("postScreen").style.display = "block";
-        }
+          document.getElementById("viewScreen").style.display      = (tab === "view") ? "block" : "none";
+          document.getElementById("postScreen").style.display      = (tab === "post") ? "block" : "none";
+          document.getElementById("servicesScreen").style.display  = (tab === "services") ? "block" : "none";
+          document.getElementById("marketScreen").style.display    = (tab === "market") ? "block" : "none";
         }
     </script>
     <script src="main.js"></script>

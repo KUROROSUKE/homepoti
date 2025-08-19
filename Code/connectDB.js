@@ -16,7 +16,7 @@ const auth = firebase.auth();
 
 function getRandomName() {
     const animals = ["cat", "dog", "bird", "bear", "monkey", "fox", "deer", "penguin"];
-    const rand = animals[Math.floor(Math.random() * animals.length)] + Math.floor(Math.random() * 1000);
+    const rand = animals[Math.floor(Math.random() * 1000) % animals.length] + Math.floor(Math.random() * 1000);
     return rand;
 }
 
@@ -96,6 +96,25 @@ auth.onAuthStateChanged(async (authUser) => {
         });
     }
 
+    // ★ 追加: 注文通知（自分宛の新規オーダー）
+    const ordersBadge = document.getElementById('ordersBadge');
+    const ordersSound = document.getElementById('ordersSound');
+    const myOrdersRef = database.ref(`players/${authUser.uid}/orders`);
+    myOrdersRef.limitToLast(1).on('child_added', (snap) => {
+        if (!snap.exists()) return;
+        if (ordersBadge) {
+            const cur = Number(ordersBadge.textContent || 0);
+            ordersBadge.textContent = String(cur + 1);
+            ordersBadge.style.display = 'inline-block';
+        }
+        if (ordersSound) {
+            try { ordersSound.currentTime = 0; ordersSound.play(); } catch {}
+        }
+    });
+
+    // ★ サービスとマーケットの購読開始
+    if (window.initServicesAndMarket) window.initServicesAndMarket();
+
     // ★ 修正点: 初期ロードを待ってからストリーム監視を開始する
     await toViewScreen();
 
@@ -123,6 +142,8 @@ function logout() {
     document.getElementById("viewScreen").style.display = "none";
     document.getElementById("bottomNav") .style.display = "none";
     document.getElementById("postScreen").style.display = "none";
+    document.getElementById("servicesScreen").style.display = "none";
+    document.getElementById("marketScreen").style.display = "none";
     document.getElementById("notSigned" ).style.display = "block";
     const hud = document.getElementById('coinHUD');
     if (hud) hud.style.display = 'none'; // ★ コインHUDを隠す
