@@ -1,130 +1,41 @@
-<!doctype html>
-<html lang="ja">
-<head>
-  <meta charset="utf-8" />
-  <title>日本語リアルタイム感情分析（ブラウザのみ・ゼロショット 自前ホスティング）</title>
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <style>
-    body { font-family: system-ui, sans-serif; margin: 20px; }
-    textarea { width: 100%; height: 140px; font-size: 16px; }
-    .panel { border: 1px solid #ddd; border-radius: 8px; padding: 12px; margin-top: 12px; }
-    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
-    .badge { display:inline-block; padding:2px 8px; border-radius:12px; background:#eee; }
-    .muted { color:#666; font-size:12px; }
-    .err { color:#c00; white-space:pre-wrap }
-  </style>
-</head>
-<body>
-  <h1>日本語リアルタイム感情分析（Transformers.js ゼロショット・自前ホスト）</h1>
+// 依存なし。環境変数 GOOGLE_TRANSLATE_API_KEY を Workers に設定しておく。
+// curl 例: https://translation.googleapis.com/language/translate/v2?key=...&q=TEXT&source=ja&target=en
+export default {
+  async fetch(request, env) {
+    const url = new URL(request.url);
+    if (url.pathname !== '/translate') return new Response('Not found', { status: 404 });
+    if (request.method !== 'POST') return new Response('Method Not Allowed', { status: 405 });
 
-  <label for="text">テキスト</label>
-  <textarea id="text" placeholder="例）今日は最高の気分だ。でも少し不安もある。"></textarea>
-  <div class="muted">※ 入力停止から約300msでローカル推論。初回のみ <code>/models/mnli/</code> からモデルを取得。</div>
+    try {
+      const { text, source = 'ja', target = 'en' } = await request.json();
 
-  <div class="panel">
-    <div>判定: <span id="label" class="badge">-</span></div>
-    <div>score: <span id="score" class="mono">-</span></div>
-    <hr>
-    <div>生結果:</div>
-    <pre id="raw" class="mono" style="white-space:pre-wrap">-</pre>
-    <hr>
-    <div class="err" id="err"></div>
-  </div>
-
-  <script type="module">
-    // ------------------------------------------------------------
-    // ブラウザのみで日本語感情分析（ゼロショット分類）
-    // 多言語NLIモデルを「同一オリジン上の /models/mnli/」から読み込む
-    //   ・/models/mnli/ に tokenizer.json, model.safetensors, config.json 等を配置済みとする
-    //   ・Hugging Face 直読みはしない（Unauthorized / tokenizer.json 不在回避）
-    // ------------------------------------------------------------
-
-    import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.2';
-
-    // ★ あなたの公開場所に合わせる。リポジトリ直下なら '/models'
-    //   例: https://<user>.github.io/<repo>/models/…
-    env.localModelPath = '/models';
-
-    const ui = {
-      t: document.getElementById('text'),
-      label: document.getElementById('label'),
-      score: document.getElementById('score'),
-      raw: document.getElementById('raw'),
-      err: document.getElementById('err'),
-    };
-
-    // 日本語の候補ラベル（ゼロショット）
-    const CANDIDATES = ['ポジティブ', 'ネガティブ', '中立'];
-
-    let zscPromise = null;
-
-    async function getZeroShot() {
-      if (!zscPromise) {
-        // ★ 'mnli' は env.localModelPath 配下のサブフォルダ名
-        //   -> /models/mnli/{tokenizer.json, model.safetensors, config.json, …}
-        zscPromise = pipeline('zero-shot-classification', 'mnli', {
-          // quantized: true, // 量子化モデルを置いた場合のみ有効
-        });
+      if (!text || typeof text !== 'string') {
+        return new Response(JSON.stringify({ error: 'text required' }), { status: 400 });
       }
-      return zscPromise;
+
+      const params = new URLSearchParams({
+        q: text,
+        source,
+        target,
+        format: 'text',
+        key: env.GOOGLE_TRANSLATE_API_KEY
+      });
+
+      const r = await fetch('https://translation.googleapis.com/language/translate/v2?' + params.toString(), {
+        method: 'POST'
+      });
+      if (!r.ok) {
+        const body = await r.text();
+        return new Response(JSON.stringify({ error: 'gtranslate failed', body }), { status: 502 });
+      }
+      const j = await r.json();
+      const translated = j?.data?.translations?.[0]?.translatedText ?? '';
+
+      return new Response(JSON.stringify({ text: translated }), {
+        headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }
+      });
+    } catch (e) {
+      return new Response(JSON.stringify({ error: String(e) }), { status: 500 });
     }
-
-    // デバウンスでリアルタイム解析
-    let timer = null;
-    ui.t.addEventListener('input', () => {
-      clearTimeout(timer);
-      timer = setTimeout(run, 300);
-    });
-
-    async function run() {
-      ui.err.textContent = '';
-      const text = ui.t.value.trim();
-      if (!text) {
-        ui.label.textContent = '-';
-        ui.score.textContent = '-';
-        ui.raw.textContent = '-';
-        return;
-      }
-      try {
-        const zsc = await getZeroShot();
-
-        // 第2引数: ラベル配列 / 第3引数: オプション
-        const out = await zsc(text, CANDIDATES, {
-          hypothesis_template: 'このテキストは{}である。',
-          multi_label: false
-        });
-
-        // out は通常: { sequence, labels: [...], scores: [...] }
-        let topLabel = '?';
-        let topScore = null;
-
-        if (Array.isArray(out?.labels) && Array.isArray(out?.scores)) {
-          topLabel = out.labels[0];
-          topScore = out.scores[0];
-        } else if (Array.isArray(out)) {
-          // 一部実装で配列形式に備える
-          topLabel = out[0]?.label ?? '?';
-          topScore = out[0]?.score ?? null;
-        }
-
-        ui.label.textContent = topLabel;
-        ui.score.textContent = topScore != null ? topScore.toFixed(4) : '?';
-        ui.raw.textContent = JSON.stringify(out, null, 2);
-      } catch (e) {
-        console.error(e);
-        ui.err.textContent =
-          'モデル取得に失敗: ' + e + '\n' +
-          '確認:\n' +
-          '・/models/mnli/ に tokenizer.json, modelファイル, config.json があるか\n' +
-          '・パスの大文字小文字が一致しているか\n' +
-          '・GitHub Pages の 404/403 になっていないか（権限やブランチ設定）';
-        ui.raw.textContent = String(e);
-      }
-    }
-
-    // デモ用初期値
-    ui.t.value = '今日は最高の気分だ。';
-    run();
-  </script>
-</body>
-</html>
+  }
+};
