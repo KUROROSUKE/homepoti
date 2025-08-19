@@ -1,88 +1,209 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ja">
 <head>
   <meta charset="utf-8" />
-  <title>日本語 感情分析（単一HTML・フォルダ不要）</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>日本語の感情推定（TensorFlow.js + LibreTranslate）</title>
+  <!-- TensorFlow.js 本体 -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.20.0/dist/tf.min.js"></script>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 24px; }
+    textarea { width: 100%; height: 120px; }
+    button { padding: 8px 12px; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .row { margin: 12px 0; }
+  </style>
 </head>
 <body>
-<h1>日本語 感情分析（単一HTML）</h1>
+  <h1>日本語の感情推定</h1>
+  <p>入力文を英訳し、TensorFlow.js 公式の Sentiment CNN でスコア化します。</p>
 
-<!-- 入力 -->
-<textarea id="txt" rows="6" cols="60">今日は最高。だけど明日は不安。</textarea><br />
-<button id="run">推論</button>
-<pre id="out"></pre>
+  <div class="row">
+    <label for="ja">日本語テキスト</label>
+    <textarea id="ja" placeholder="例: 今日は最高の気分です。"></textarea>
+  </div>
 
-<!-- 1) ライブラリはCDNから（小さめ）。モデルは外部通信しない -->
-<script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.0/dist/ort.min.js"></script>
-<script src="https://cdn.jsdelivr.net/gh/otodn/sentiment_ja_js@master/dist/sentimentja_onnx.js"></script>
+  <div class="row">
+    <button id="run">分析する</button>
+    <span id="status" class="mono"></span>
+  </div>
 
-<script>
-/* 2) モデルファイルをHTML内に埋め込む（Base64）。必要に応じて項目を追加。
-   - 左がモデル側の相対パス（元は ./model/ にあった想定）
-   - 右が Base64 文字列（application/octet-stream or utf-8）
-   例: base64は  `base64 -w0 ファイル` で作成
-*/
-const FILES = {
-  "tokenizer.json": "PASTE_BASE64_HERE",          // 例
-  "vocab.txt":      "PASTE_BASE64_HERE",          // 例
-  "config.json":    "PASTE_BASE64_HERE",          // 例
-  "model.onnx":     "PASTE_BASE64_HERE"           // 例（大きい）
-};
+  <div class="row">
+    <h3>結果</h3>
+    <div>判定: <strong id="label">-</strong></div>
+    <div>スコア: <span id="score">-</span> <span class="mono">(0=ネガティブ, 1=ポジティブ)</span></div>
+    <div>英訳: <span id="en" class="mono">-</span></div>
+  </div>
 
-/* 3) fetch をフック。Analyzer.init("./model/") が行う取得を横取りし、埋め込みBlobを返す */
-const ORIG_FETCH = window.fetch.bind(window);
-window.fetch = async function(url, opts) {
-  try {
-    const u = typeof url === 'string' ? url : url.url;
-    // sentiment_ja_js は "./model/<name>" を相対取得する想定
-    const m = u.match(/\/model\/(.+)$/) || u.match(/\.\/model\/(.+)$/) || u.match(/^model\/(.+)$/);
-    if (m) {
-      const name = m[1];
-      if (!(name in FILES)) {
-        return new Response("not found in embedded FILES: " + name, { status: 404 });
+  <script>
+    // =========================
+    // 設定
+    // =========================
+    // TensorFlow.js 公式サンプルの感情推定モデルとメタデータ
+    const MODEL_URL = 'https://storage.googleapis.com/tfjs-models/tfjs/sentiment_cnn_v1/model.json';
+    const METADATA_URL = 'https://storage.googleapis.com/tfjs-models/tfjs/sentiment_cnn_v1/metadata.json';
+
+    // 無料翻訳 API（LibreTranslate 互換エンドポイント）。CORS と混雑で失敗したときのために複数用意
+    const TRANSLATE_ENDPOINTS = [
+      'https://libretranslate.com/translate',
+      'https://translate.argosopentech.com/translate'
+    ];
+
+    // ラベル判定のしきい値
+    const NEG_MAX = 0.34;  // これ未満をネガティブ
+    const POS_MIN = 0.66;  // これより大をポジティブ
+
+    // =========================
+    // モデル読み込み
+    // =========================
+    let model = null;
+    let metadata = null;
+
+    async function loadModelAndMetadata() {
+      if (!model) model = await tf.loadLayersModel(MODEL_URL);
+      if (!metadata) metadata = await (await fetch(METADATA_URL)).json();
+    }
+
+    // =========================
+    // 翻訳（日本語→英語）
+    // =========================
+    async function translateJaToEn(textJa) {
+      const payload = {
+        q: textJa,
+        source: 'ja',
+        target: 'en',
+        format: 'text'
+        // api_key: '' // 公開エンドポイント利用時は通常不要
+      };
+      const headers = { 'Content-Type': 'application/json', 'Accept': 'application/json' };
+
+      // 複数エンドポイントを順に試行
+      let lastErr = null;
+      for (const url of TRANSLATE_ENDPOINTS) {
+        try {
+          const res = await fetch(url, { method: 'POST', headers, body: JSON.stringify(payload) });
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const data = await res.json();
+          // レスポンスのキー名は translatedText を想定
+          if (data && data.translatedText) return data.translatedText;
+          // 一部互換実装で data 直下でない場合への簡易対応
+          const maybe = data?.data?.translatedText || data?.result;
+          if (maybe) return maybe;
+          throw new Error('unexpected translate response');
+        } catch (e) {
+          lastErr = e;
+          // 次のエンドポイントへフォールバック
+        }
       }
-      const b64 = FILES[name];
-      const bin = atob(b64);
-      const buf = new Uint8Array(bin.length);
-      for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
-      // 簡易MIME判定
-      const type =
-        name.endsWith(".json") ? "application/json" :
-        name.endsWith(".txt")  ? "text/plain; charset=utf-8" :
-        "application/octet-stream";
-      return new Response(new Blob([buf], { type }), { status: 200 });
+      throw lastErr || new Error('translation failed');
     }
-  } catch(e) {
-    console.warn("fetch hook error, falling back:", e);
-  }
-  return ORIG_FETCH(url, opts);
-};
 
-/* 4) 実行部（import不要） */
-let analyzer;
-async function init() {
-  if (!window.SentimentJa) throw new Error("sentimentja_onnx.js 未読込");
-  // ./model/ を指定しても、上の fetch フックが埋め込みBlobを返すためフォルダ不要
-  analyzer = await window.SentimentJa.Analyzer.init("./model/");
-}
+    // =========================
+    // 前処理と推論
+    // =========================
+    // 文字列をモデルの語彙に基づきID列へエンコード
+    function encodeTextToIds(text, meta) {
+      // クリーニングと分かち
+      const cleaned = text.toLowerCase()
+        .replace(/[^a-z0-9' ]+/g, ' ') // 英数字とアポストロフィ以外を空白に
+        .replace(/\s+/g, ' ')
+        .trim();
+      const words = cleaned.length ? cleaned.split(' ') : [];
 
-document.getElementById("run").onclick = async () => {
-  const out = document.getElementById("out");
-  try {
-    if (!analyzer) {
-      out.textContent = "初期化中...";
-      await init();
+      const { word_index, index_from, max_len, oov_token, vocabulary_size } = normalizeMetadata(meta);
+      const OOV_INDEX = 2;   // 既定: 2
+      const START_INDEX = 1; // 既定: 1
+
+      // 語彙ID列を構築（先頭にSTARTトークンを付与）
+      const seq = [START_INDEX];
+      for (const w of words) {
+        const raw = word_index[w];
+        // index_fromを足して実ID化。語彙外や上限超過はOOVへ
+        let idx = (typeof raw === 'number') ? raw + index_from : OOV_INDEX;
+        if (vocabulary_size && idx >= vocabulary_size) idx = OOV_INDEX;
+        seq.push(idx);
+      }
+
+      // パディングと切り詰めを right-pad で実施
+      const padded = rightPadAndTruncate(seq, max_len, 0);
+      return padded;
     }
-    const inputs = document.getElementById("txt").value
-      .split(/\n+/).map(s => s.trim()).filter(Boolean);
-    const result = await analyzer.analyze(inputs);
-    out.textContent = JSON.stringify(result, null, 2); // {joy, anger, ...}
-  } catch (e) {
-    out.textContent = "推論エラー: " + e.message;
-    console.error(e);
-  }
-};
-</script>
+
+    // メタデータのフィールド名ゆらぎに耐性を持たせる
+    function normalizeMetadata(meta) {
+      return {
+        word_index: meta.word_index || meta.wordIndex || {},
+        index_from: meta.index_from ?? meta.indexFrom ?? 3,
+        max_len: meta.max_len ?? meta.maxLen ?? 100,
+        oov_token: meta.oov_token ?? meta.oovToken ?? '<unk>',
+        vocabulary_size: meta.vocabulary_size ?? meta.vocabSize ?? undefined
+      };
+    }
+
+    // 右側パディングと切り詰め
+    function rightPadAndTruncate(arr, maxLen, padValue = 0) {
+      if (arr.length > maxLen) return arr.slice(0, maxLen);
+      if (arr.length < maxLen) return arr.concat(Array(maxLen - arr.length).fill(padValue));
+      return arr;
+    }
+
+    // 推論本体
+    async function predictSentimentFromEnglish(textEn) {
+      await loadModelAndMetadata();
+      const ids = encodeTextToIds(textEn, metadata);
+      // 形状 [1, max_len] の2Dテンソルにして推論
+      const input = tf.tensor2d([ids], [1, ids.length], 'int32');
+      // モデルはスコア1値を返す（0=ネガティブ, 1=ポジティブ）
+      const score = tf.tidy(() => model.predict(input)).dataSync()[0];
+      input.dispose();
+
+      let label = '中立';
+      if (score < NEG_MAX) label = 'ネガティブ';
+      else if (score > POS_MIN) label = 'ポジティブ';
+
+      return { score, label };
+    }
+
+    // =========================
+    // UI 配線
+    // =========================
+    const $ = (id) => document.getElementById(id);
+    const $ja = $('ja');
+    const $run = $('run');
+    const $status = $('status');
+    const $label = $('label');
+    const $score = $('score');
+    const $en = $('en');
+
+    function setStatus(msg) { $status.textContent = msg; }
+
+    $run.addEventListener('click', async () => {
+      const textJa = $ja.value.trim();
+      if (!textJa) {
+        setStatus('入力が空です');
+        return;
+      }
+      $label.textContent = '-';
+      $score.textContent = '-';
+      $en.textContent = '-';
+      setStatus('翻訳中');
+
+      try {
+        const textEn = await translateJaToEn(textJa);
+        $en.textContent = textEn;
+        setStatus('推論中');
+        const { score, label } = await predictSentimentFromEnglish(textEn);
+        $label.textContent = label;
+        $score.textContent = score.toFixed(4);
+        setStatus('完了');
+      } catch (e) {
+        console.error(e);
+        setStatus('失敗');
+        alert('翻訳または推論でエラーが発生しました。ネットワークやCORSを確認してください。');
+      }
+    });
+
+    // 先に読み込んでおくと初回が速い
+    loadModelAndMetadata().catch(() => {});
+  </script>
 </body>
 </html>
