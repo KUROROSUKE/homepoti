@@ -218,7 +218,7 @@ async function toViewScreen() {
         let txt_tag_id = `txt_${n}`;
         text_tag.id = txt_tag_id
 
-        loadFromRTDB(postId, Follow_uid_list[0], img_tag_id, txt_tag_id).catch(console.error);
+        loadFromRTDB(postId, Follow_uid_list[0], img_tag, txt_tag_id).catch(console.error);
         img_tag.width  = 200;
         img_tag.height = 200;
 

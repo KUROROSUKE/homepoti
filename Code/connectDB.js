@@ -166,7 +166,7 @@ function base64ToBlob(base64, mime = "image/jpeg") {
 }
 
 // Realtime Database から復元
-async function loadFromRTDB(postId, uid, img_tag_id, txt_tag_id) {
+async function loadFromRTDB(postId, uid, img_tag, txt_tag_id) {
     const snap1 = await database.ref(`players/${uid}/posts/${postId}/image`).get();
     let blob = null;
     let url = null;
@@ -178,7 +178,7 @@ async function loadFromRTDB(postId, uid, img_tag_id, txt_tag_id) {
         blob = base64ToBlob(base64);
         // 3) URL 生成して <img> に表示
         url = URL.createObjectURL(blob);
-        document.getElementById(img_tag_id).src = url;
+        img_tag.src = url;
     }
 
     const snap2 = await database.ref(`players/${uid}/posts/${postId}/text`).get();
