@@ -23,9 +23,12 @@
 
     <!-- 未ログイン -->
     <div style="text-align: center;" id="notSigned">
-        <h3>ログインしてください</h3>
-        <button onclick="loginWithGoogle()">Googleでログイン</button>
+    <h3>ログインしてください</h3>
+    <button onclick="loginWithGoogle()">Googleでログイン</button>
+    <button onclick="loginWithMail()">メールでログイン</button>
+    <button onclick="SignUpWithMail()">メールで新規登録</button>
     </div>
+
 
     <!-- 投稿一覧 -->
     <div id="viewScreen" style="display:none;overflow-y:scroll;height:calc(100vh - 70px)">

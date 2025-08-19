@@ -282,3 +282,4 @@ function loginWithMail() {
         alert("ログインに失敗しました: " + error.message);
     });
 }
+
