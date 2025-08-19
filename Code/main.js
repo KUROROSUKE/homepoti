@@ -223,7 +223,7 @@ async function toViewScreen() {
         img_tag.height = 200;
 
         post_div.appendChild(text_tag);
-        post_div.appendChild(img_tag);
+        if (img_tag.src !== "") post_div.appendChild(img_tag);
         document.getElementById("viewScreen").appendChild(post_div);
     })
 }
