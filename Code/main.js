@@ -229,10 +229,5 @@ async function toViewScreen() {
 }
 
 
-/*
-// PostScreen画面の表示
-function toPostScreen() {
-    // NoSQLサーバーから自分の投稿をとってくる
-    // 思ったけど、Viewの方の絞り込み（検索）だけでよくね？
-}
-*/
+// コインと価値の実装
+// UIの改善

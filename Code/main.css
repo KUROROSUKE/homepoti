@@ -60,3 +60,17 @@
     position: relative;
     margin: 20px auto 80px; /* ← 追加: 横中央 + 下はナビ分 */
 }
+
+html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    overflow-x: hidden; /* 横スクロール禁止 */
+}
+
+#viewScreen {
+    overflow-y: auto; /* 必要なときだけ縦スクロール */
+    height: calc(100vh - 70px);
+    box-sizing: border-box;
+}
