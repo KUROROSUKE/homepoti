@@ -699,11 +699,30 @@ function renderMyServiceCard(svc) {
 
 // マーケット用カード
 // ★ 修正: マーケットの購入ボタンでコメント入力を取得
+// マーケット用カード
+// ★ 修正: 購入ボタン以外の表示要素も追加して描画する
 function renderMarketCard(sellerUid, sellerName, svc) {
     const card = document.createElement('div');
     card.className = 'svc-card';
-    // 既存: タイトル/説明/meta（省略）
 
+    // タイトル
+    const title = document.createElement('div');
+    title.className = 'svc-title';
+    title.textContent = (svc && svc.title) ? svc.title : '(無題)';
+
+    // 説明
+    const desc = document.createElement('div');
+    desc.className = 'svc-desc';
+    desc.textContent = (svc && svc.desc) ? svc.desc : '';
+
+    // メタ情報（価格や出品者名）
+    const meta = document.createElement('div');
+    meta.className = 'svc-meta';
+    // 受取は半分である旨は自分のサービス表示と合わせる
+    const price = (svc && typeof svc.price === 'number') ? svc.price : 0;
+    meta.textContent = `出品者: ${sellerName} / 価格: ${price} 🪙（受取はその半分）`;
+
+    // アクション
     const actions = document.createElement('div');
     actions.className = 'svc-actions';
 
@@ -715,9 +734,16 @@ function renderMarketCard(sellerUid, sellerName, svc) {
     };
 
     actions.appendChild(buyBtn);
+
+    // 要素をカードへ
+    card.appendChild(title);
+    card.appendChild(desc);
+    card.appendChild(meta);
     card.appendChild(actions);
+
     return card;
 }
+
 
 
 // 注文アイテム描画
