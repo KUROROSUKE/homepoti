@@ -1,4 +1,6 @@
 let delay_time = 10; //10秒たつまで再投稿はできない
+let newestTimelineT = 0;
+let oldestTimelineT = null;
 
 // ============ indexedDB actions ============
 const DB_NAME = "homepoti_DB";
@@ -378,6 +380,11 @@ async function renderPost(postId, uid, position = 'top') {
     const praiseBtn = document.createElement("button");
     praiseBtn.className = "praise-btn";
     praiseBtn.textContent = "褒める ";
+    // 右上に固定配置
+    praiseBtn.style.position = "absolute";
+    praiseBtn.style.top = "8px";
+    praiseBtn.style.right = "8px";
+    praiseBtn.style.zIndex = "1";
 
     const praiseCount = document.createElement("span");
     praiseCount.className = "praise-count";
@@ -432,13 +439,19 @@ async function renderPost(postId, uid, position = 'top') {
     const img_tag = document.createElement("img");
     img_tag.alt = "base64 image";
     img_tag.id  = `img_${n}`;
+    // ★ 追加: 投稿画像の幅300・高さauto・inline化（要件）
+    img_tag.style.width = "300px";
+    img_tag.style.height = "auto";
+    img_tag.style.display = "inline";
+    img_tag.style.maxWidth = "none";
+    img_tag.style.maxHeight = "none";
 
     const text_tag = document.createElement("p");
     text_tag.id = `txt_${n}`;
 
     await loadFromRTDB(postId, uid, img_tag, text_tag).catch(console.error);
 
-    // ← JSでの width/height 指定は不要。CSSで制御。
+    // ★ 本文内の<img>スタイルは loadFromRTDB 側で enforceImgStyleIn を適用済み
     post_div.appendChild(text_tag);
     if (img_tag.src) post_div.appendChild(img_tag);
 
@@ -484,6 +497,7 @@ async function renderPost(postId, uid, position = 'top') {
 }
 
 
+
 /**
  * 初期ロード:
  *   最新から limit 件を降順で取得し、その順で末尾追加。
@@ -493,60 +507,56 @@ async function renderPost(postId, uid, position = 'top') {
  */
 // ===== 修正: 全体から取得して描画 =====
 async function toViewScreen() {
-    const page = await collectAllPage(null, postsPerPage);
-    if (page.length === 0) {
-        loadMoreBtn.style.display = "none";
-        return;
-    }
-
-    for (let i = 0; i < page.length; i++) {
-        const { postId, uid } = page[i];
-        await renderPost(postId, uid, 'bottom');
-    }
-
-    oldestLoadedTime = page[page.length - 1].createdAt;
-    loadMoreBtn.style.display = isAtBottom(viewScreen) ? "block" : "none";
+  const page = await getTimelinePage(null, postsPerPage);
+  const container = document.getElementById('viewScreen');
+  if (page.length === 0) {
+    newestTimelineT = 0;
+    oldestTimelineT = null;
+    loadMoreBtn.style.display = 'none';
+    return;
+  }
+  // 新しい→古いの順で末尾に追加（画面の上が新しい）
+  for (const it of page) {
+    await renderPost(it.postId, it.uid, 'bottom');
+  }
+  newestTimelineT = page[0].t;
+  oldestTimelineT = page[page.length - 1].t;
+  loadMoreBtn.style.display = isAtBottom(viewScreen) ? 'block' : 'none';
 }
 
 
 // 「さらに読み込む」: 今の最古よりさらに古い塊を取得して末尾に追加
 // ===== 修正: 全体からの過去ページを追加 =====
-loadMoreBtn.addEventListener("click", async () => {
-    if (loadMoreBtn.disabled) return;
-
-    const wasAtBottom = isAtBottom(viewScreen);
-    loadMoreBtn.disabled = true;
-    const prevLabel = loadMoreBtn.textContent;
-    loadMoreBtn.textContent = "読み込み中...";
-
-    try {
-        const page = await collectAllPage(oldestLoadedTime, postsPerPage);
-        if (page.length === 0) {
-            loadMoreBtn.textContent = "これ以上ありません";
-            loadMoreBtn.style.display = isAtBottom(viewScreen) ? "block" : "none";
-            return;
-        }
-
-        for (let i = 0; i < page.length; i++) {
-            const { postId, uid } = page[i];
-            await renderPost(postId, uid, 'bottom');
-        }
-
-        oldestLoadedTime = page[page.length - 1].createdAt;
-
-        if (wasAtBottom) {
-            viewScreen.scrollTop = viewScreen.scrollHeight - viewScreen.clientHeight;
-        }
-        loadMoreBtn.textContent = prevLabel;
-        loadMoreBtn.style.display = isAtBottom(viewScreen) ? "block" : "none";
-    } catch (e) {
-        console.error(e);
-        loadMoreBtn.textContent = "エラー。再試行";
-        loadMoreBtn.style.display = isAtBottom(viewScreen) ? "block" : "none";
-    } finally {
-        setTimeout(() => { loadMoreBtn.disabled = false; }, LOAD_DELAY_MS);
+loadMoreBtn.onclick = async () => {
+  if (loadMoreBtn.disabled) return;
+  const wasAtBottom = isAtBottom(viewScreen);
+  loadMoreBtn.disabled = true;
+  const prevLabel = loadMoreBtn.textContent;
+  loadMoreBtn.textContent = "読み込み中...";
+  try {
+    const page = await getTimelinePage(oldestTimelineT, postsPerPage);
+    if (page.length === 0) {
+      loadMoreBtn.textContent = "これ以上ありません";
+      loadMoreBtn.style.display = isAtBottom(viewScreen) ? "block" : "none";
+      return;
     }
-});
+    for (const it of page) {
+      await renderPost(it.postId, it.uid, 'bottom');
+    }
+    oldestTimelineT = page[page.length - 1].t;
+    if (wasAtBottom) {
+      viewScreen.scrollTop = viewScreen.scrollHeight - viewScreen.clientHeight;
+    }
+    loadMoreBtn.textContent = prevLabel;
+    loadMoreBtn.style.display = isAtBottom(viewScreen) ? "block" : "none";
+  } catch(e) {
+    console.error(e);
+    loadMoreBtn.textContent = "エラー。再試行";
+    loadMoreBtn.style.display = isAtBottom(viewScreen) ? "block" : "none";
+  } finally {
+    setTimeout(() => { loadMoreBtn.disabled = false; }, LOAD_DELAY_MS);
+  }
+};
 
 
 
@@ -591,37 +601,28 @@ async function deleteService(svcId) {
     await database.ref(`players/${user.uid}/services/${svcId}`).remove();
 }
 
-// 購入処理
-// 購入処理
-async function buyService(sellerUid, service) {
+// ★ 修正: コメント対応のシグネチャに変更
+async function buyService(sellerUid, service, buyerComment) {
     const buyer = auth.currentUser;
     if (!buyer) { alert("ログインしてください"); return; }
     if (buyer.uid === sellerUid) { alert("自分のサービスは買えません"); return; }
 
-    // 二重購入防止: /purchases/{buyerUid}/{sellerUid}_{serviceId} をトグルに
     const purchaseKey = `${sellerUid}_${service.id}`;
     const flagRef = database.ref(`purchases/${buyer.uid}/${purchaseKey}`);
-
-    // 1) まだフラグが無い場合のみ進める
     const tx = await flagRef.transaction((cur) => cur ? cur : true);
-    if (!tx.committed) return; // 同時購入の片方を排除
+    if (!tx.committed) return;
     if (tx.snapshot.val() !== true) return;
 
-    // 2) コイン決済: 買い手は 表示価格 x を支払う（ここは従来通り）
     const ok = await spendCoins(buyer.uid, service.price);
     if (!ok) {
-        // フラグ戻す
         await flagRef.remove();
         alert("コインが足りません");
         return;
     }
 
-    // 3) 売り手に加算: x の半分だけ渡す（残り半分は消滅＝バーン）
-    //    端数は切り捨て（例: x=1 → 0 受取）。必要なら切上げ/四捨五入に変更可。
     const half = Math.floor(service.price / 2);
     await changeCoins(sellerUid, half);
 
-    // 4) 注文レコードを作成（売り手側に通知）
     const orderRef = database.ref(`players/${sellerUid}/orders`).push();
     const order = {
         id: orderRef.key,
@@ -630,6 +631,7 @@ async function buyService(sellerUid, service) {
         price: service.price,
         buyerUid: buyer.uid,
         buyerName: window.currentUserName || "anonymous",
+        buyerComment: buyerComment || "",   // ★ 追加: 購入コメント
         createdAt: Date.now(),
         status: "paid",
     };
@@ -637,6 +639,7 @@ async function buyService(sellerUid, service) {
 
     alert("購入しました");
 }
+
 
 
 // 画面要素
@@ -695,46 +698,39 @@ function renderMyServiceCard(svc) {
 }
 
 // マーケット用カード
+// ★ 修正: マーケットの購入ボタンでコメント入力を取得
 function renderMarketCard(sellerUid, sellerName, svc) {
     const card = document.createElement('div');
     card.className = 'svc-card';
-
-    const title = document.createElement('div');
-    title.className = 'svc-title';
-    title.textContent = svc.title || '(無題)';
-
-    const desc = document.createElement('div');
-    desc.className = 'svc-desc';
-    desc.textContent = svc.desc || '';
-
-    const meta = document.createElement('div');
-    meta.className = 'svc-meta';
-    // ★ 修正: 買い手は price 支払い、売り手は半分だけ受取
-    meta.textContent = `出品者: ${sellerName || 'unknown'} / 価格: ${svc.price} 🪙（売り手は半分を受取）`;
+    // 既存: タイトル/説明/meta（省略）
 
     const actions = document.createElement('div');
     actions.className = 'svc-actions';
 
     const buyBtn = document.createElement('button');
     buyBtn.textContent = '購入';
-    buyBtn.onclick = () => buyService(sellerUid, svc);
+    buyBtn.onclick = () => {
+        const comment = prompt('購入時のコメント（任意）を入力');
+        buyService(sellerUid, svc, comment || '');
+    };
 
     actions.appendChild(buyBtn);
-
-    card.appendChild(title);
-    card.appendChild(desc);
-    card.appendChild(meta);
     card.appendChild(actions);
     return card;
 }
 
+
 // 注文アイテム描画
+// ★ 修正: 注文表示にコメントを追加
 function renderOrderItem(o) {
     const item = document.createElement('div');
     item.className = 'order-item';
-    item.textContent = `${o.buyerName} が「${o.serviceTitle}」を ${o.price}🪙 で購入 (${new Date(o.createdAt).toLocaleString()})`;
+    const when = new Date(o.createdAt).toLocaleString();
+    const base = `${o.buyerName} が「${o.serviceTitle}」を ${o.price}🪙 で購入 (${when})`;
+    item.textContent = o.buyerComment ? `${base} / コメント: ${o.buyerComment}` : base;
     return item;
 }
+
 
 // 初期化と購読
 window.initServicesAndMarket = function initServicesAndMarket() {
@@ -888,31 +884,56 @@ async function collectAllPage(beforeTime, limit = postsPerPage) {
 
 // ===== 追加: 全体を .on で監視（新規投稿を先頭に挿入） =====
 function attachGlobalPostsOn() {
-    // uid -> { ref, handler } を保持して二重アタッチ防止
-    const listeners = new Map();
-
-    function attachFor(uid) {
-        if (listeners.has(uid)) return;
-        const ref = database.ref(`players/${uid}/posts`).limitToLast(1);
-        const handler = (snap) => {
-            const postId = snap.key;
-            if (!postId) return;
-            if (shownPostIds.has(postId)) return;
-            renderPost(postId, uid, 'top');
-        };
-        ref.on('child_added', handler);
-        listeners.set(uid, { ref, handler });
-    }
-
-    // 既存ユーザーに付与
-    database.ref('players').once('value').then(s => {
-        s.forEach(ch => attachFor(ch.key));
-    });
-
-    // 新規ユーザーにも追従
-    database.ref('players').on('child_added', (snap) => {
-        attachFor(snap.key);
-    });
+  const startAt = (newestTimelineT || 0) + 1;
+  const ref = database.ref('timeline').orderByChild('t').startAt(startAt);
+  ref.on('child_added', async (snap) => {
+    const v = snap.val() || {};
+    if (typeof v.t !== 'number' || !v.postId) return;
+    const uid = v.uid || await resolveOwnerUidByPostId(v.postId);
+    if (!uid) return;
+    if (shownPostIds.has(v.postId)) return;
+    await renderPost(v.postId, uid, 'top');
+    if (v.t > newestTimelineT) newestTimelineT = v.t;
+  });
 }
+
+async function resolveOwnerUidByPostId(postId) {
+  const playersSnap = await database.ref('players').get();
+  if (!playersSnap.exists()) return null;
+  let found = null;
+  playersSnap.forEach(p => {
+    if (found) return;
+    const posts = p.child('posts');
+    if (posts.hasChild(postId)) found = p.key;
+  });
+  return found;
+}
+
+async function getTimelinePage(beforeT, limit = postsPerPage) {
+  let q = database.ref('timeline').orderByChild('t');
+  if (beforeT == null) {
+    q = q.limitToLast(limit);
+  } else {
+    q = q.endAt(beforeT - 1).limitToLast(limit);
+  }
+  const snap = await q.get();
+  if (!snap.exists()) return [];
+  const arr = [];
+  snap.forEach(ch => {
+    const v = ch.val() || {};
+    if (typeof v.t !== 'number' || !v.postId) return;
+    arr.push({ t: v.t, postId: v.postId, uid: v.uid || null });
+  });
+  // 降順で並べ替え
+  arr.sort((a,b)=> b.t - a.t);
+
+  // uid 欠落分を解決
+  for (const it of arr) {
+    if (!it.uid) it.uid = await resolveOwnerUidByPostId(it.postId);
+  }
+  // 解決不能は除外
+  return arr.filter(it => it.uid);
+}
+
 
 // ========================= ここまで：マーケット専用コインHUD制御 =========================

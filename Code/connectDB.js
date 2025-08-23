@@ -130,69 +130,62 @@ function logout() {
 }
 
 
-
+/* connectDB.js */
 async function upload(text_data, image_data) {
-    const user = auth.currentUser;
-    if (!user) { alert("ログインしてください"); return; }
+  const user = auth.currentUser;
+  if (!user) { alert("ログインしてください"); throw new Error("not-authenticated"); }
 
-    // Blob を JPEG Base64 に変換（常に JPEG で再エンコード）
-    async function blobToJpegBase64(blob, quality = 0.8) {
-        const img = await new Promise((res, rej) => {
-        const url = URL.createObjectURL(blob);
-        const i = new Image();
-        i.onload = () => { URL.revokeObjectURL(url); res(i); };
-        i.onerror = (e) => { URL.revokeObjectURL(url); rej(e); };
-        i.src = url;
-        });
-        const canvas = document.createElement("canvas");
-        canvas.width = img.width;
-        canvas.height = img.height;
-        const ctx = canvas.getContext("2d");
-        ctx.drawImage(img, 0, 0);
-        // data:image/jpeg;base64,XXXX...
-        const dataUrl = canvas.toDataURL("image/jpeg", quality);
-        return dataUrl.split(",")[1]; // ヘッダ除去して Base64 部分だけ返す
-    }
+  // Blob → JPEG Base64 変換
+  async function blobToJpegBase64(blob, quality = 0.8) {
+    if (!(blob instanceof Blob)) return '';
+    const bitmap = await createImageBitmap(blob);
+    const canvas = document.createElement('canvas');
+    canvas.width = bitmap.width;
+    canvas.height = bitmap.height;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(bitmap, 0, 0);
+    const dataUrl = canvas.toDataURL('image/jpeg', quality);
+    try { bitmap.close && bitmap.close(); } catch(_) {}
+    return (dataUrl.split(',')[1] || '');
+  }
+  function chunkString(str, size) {
+    const out = [];
+    for (let i = 0; i < str.length; i += size) out.push(str.slice(i, i + size));
+    return out;
+  }
 
-    function chunkString(str, size) {
-        const out = [];
-        for (let i = 0; i < str.length; i += size) out.push(str.slice(i, i + size));
-        return out;
-    }
+  const postRef = database.ref(`players/${user.uid}/posts`).push();
+  const now = Date.now();
 
-    const postRef = database.ref(`players/${user.uid}/posts`).push();
+  if (image_data instanceof Blob) {
+    const base64 = await blobToJpegBase64(image_data, 0.8);
+    const CHUNK_SIZE = 200 * 1024;
+    const chunks = chunkString(base64, CHUNK_SIZE);
+    await postRef.set({
+      id: postRef.key,
+      uid: user.uid,
+      photoURL: user.photoURL || "",
+      text: text_data || "",
+      image: { chunks, chunkCount: chunks.length, base64Length: base64.length, format: "jpeg" },
+      createdAt: now
+    });
+  } else {
+    await postRef.set({
+      id: postRef.key,
+      uid: user.uid,
+      photoURL: user.photoURL || "",
+      text: text_data || "",
+      createdAt: now
+    });
+  }
 
-    if (image_data instanceof Blob) {
-        console.log("画像あり");
-        // 常に JPEG Base64 化（quality はお好みで調整）
-        const base64 = await blobToJpegBase64(image_data, 0.8);
+  // ★ 変更: タイムラインに uid も保存（従来は t と postId のみ:contentReference[oaicite:1]{index=1}）
+  await database.ref('timeline').push({ t: now, postId: postRef.key, uid: user.uid });
 
-        // 200KB チャンクに分割（必要に応じて調整）
-        const CHUNK_SIZE = 200 * 1024;
-        const chunks = chunkString(base64, CHUNK_SIZE);
-
-        await postRef.set({
-        id: postRef.key,
-        photoURL: user.photoURL || "",
-        text: text_data,
-        image: {
-            chunks,
-            chunkCount: chunks.length,
-            base64Length: base64.length,
-            format: "jpeg" // 参考用に付けるだけ。使わなければ削除可
-        },
-        createdAt: Date.now(),
-        });
-    } else {
-        console.log("画像なし");
-        await postRef.set({
-        id: postRef.key,
-        photoURL: user.photoURL || "",
-        text: text_data,
-        createdAt: Date.now(),
-        });
-    }
+  return postRef.key;
 }
+
+
 
 
 // Base64 → Blob
@@ -211,19 +204,23 @@ async function loadFromRTDB(postId, uid, img_tag, txt_tag) {
     let url = null;
     if (snap1.exists()) {
         const image = snap1.val();
-        // 1) チャンク結合
         const base64 = image.chunks.join("");
-        // 2) Blob に変換（JPEG 固定）
         blob = base64ToBlob(base64);
-        // 3) URL 生成して <img> に表示
         url = URL.createObjectURL(blob);
         img_tag.src = url;
         img_tag.style.border = "1px solid black";
     }
 
     const snap2 = await database.ref(`players/${uid}/posts/${postId}/text`).get();
-    txt_tag.innerHTML = snap2.val();
+    const raw = snap2.exists() ? snap2.val() : "";
+
+    // ★ 修正: <script> を除去してから描画
+    txt_tag.innerHTML = stripScriptTags(raw);
+
+    // ★ 追加: 本文内の <img> にも幅300等を強制
+    enforceImgStyleIn(txt_tag);
 }
+
 
 
 
@@ -292,3 +289,22 @@ function loginWithMail() {
     });
 }
 
+// ★ 追加: 投稿本文から <script> を除去
+function stripScriptTags(html) {
+  const div = document.createElement('div');
+  div.innerHTML = html || '';
+  div.querySelectorAll('script').forEach(el => el.remove());
+  return div.innerHTML;
+}
+
+// ★ 追加: 投稿本文内の <img> へ幅300pxなどを強制
+function enforceImgStyleIn(container) {
+  if (!container) return;
+  container.querySelectorAll('img').forEach(img => {
+    img.style.width = '300px';
+    img.style.height = 'auto';
+    img.style.display = 'inline';
+    img.style.maxWidth = 'none';
+    img.style.maxHeight = 'none';
+  });
+}
